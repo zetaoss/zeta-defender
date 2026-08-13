@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+Dockerfile
+README.md
+deploy
+config*.yaml
+*.out
+coverage.*

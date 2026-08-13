@@ -1,0 +1,18 @@
+server:
+  listen: ":8080"
+
+metrics:
+  endpoint: http://prometheus:9090
+  interval: 1m
+  expr: 'max(1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) >= bool 0.9'
+
+policy:
+  armingChecks: 5
+  fighting:
+    baseDuration: 10m
+    maxLevel: 12
+
+actions:
+  cloudflare:
+    apiToken: ${CLOUDFLARE_API_TOKEN}
+    zoneID: example-zone-id

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: zeta-defender
+  labels:
+    app.kubernetes.io/name: zeta-defender
+spec:
+  selector:
+    app.kubernetes.io/name: zeta-defender
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP

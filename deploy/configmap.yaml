@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zeta-defender
+  labels:
+    app.kubernetes.io/name: zeta-defender
+data:
+  config.yaml: |
+    server:
+      listen: ":8080"
+
+    metrics:
+      endpoint: http://prometheus.monitoring.svc.cluster.local:9090
+      interval: 1m
+      expr: 'sum(rate(http_requests_total{status=~"5.."}[5m])) >= bool 100'
+
+    policy:
+      armingChecks: 5
+      fighting:
+        baseDuration: 10m
+        maxLevel: 12
+
+    actions:
+      cloudflare:
+        apiToken: ${CLOUDFLARE_API_TOKEN}
+        zoneID: example-zone-id
