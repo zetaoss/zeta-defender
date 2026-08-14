@@ -14,28 +14,40 @@ import (
 )
 
 const (
-	defaultAPIBase  = "https://api.cloudflare.com/client/v4"
-	maxResponseSize = 1 << 20
+	defaultAPIBase   = "https://api.cloudflare.com/client/v4"
+	maxResponseSize  = 1 << 20
+	underAttackLevel = "under_attack"
+)
+
+type StartupMode string
+
+const (
+	StartupModePreserve StartupMode = "preserve"
+	StartupModeNormal   StartupMode = "normal"
+	StartupModeFighting StartupMode = "fighting"
 )
 
 type Action struct {
-	token  string
-	zoneID string
-	base   string
-	client *http.Client
+	token               string
+	zoneID              string
+	base                string
+	client              *http.Client
+	normalSecurityLevel string
 
-	mu            sync.Mutex
-	previousLevel string
-	owned         bool
+	mu    sync.Mutex
+	owned bool
 }
 
-func New(apiToken, zoneID string, client *http.Client) (*Action, error) {
-	return newWithBase(apiToken, zoneID, defaultAPIBase, client)
+func New(apiToken, zoneID, normalSecurityLevel string, client *http.Client) (*Action, error) {
+	return newWithBase(apiToken, zoneID, normalSecurityLevel, defaultAPIBase, client)
 }
 
-func newWithBase(apiToken, zoneID, base string, client *http.Client) (*Action, error) {
+func newWithBase(apiToken, zoneID, normalSecurityLevel, base string, client *http.Client) (*Action, error) {
 	if strings.TrimSpace(apiToken) == "" || strings.TrimSpace(zoneID) == "" {
 		return nil, errors.New("Cloudflare API token and zone ID are required")
+	}
+	if !isNormalSecurityLevel(normalSecurityLevel) {
+		return nil, fmt.Errorf("invalid normal security level %q", normalSecurityLevel)
 	}
 	if _, err := url.ParseRequestURI(base); err != nil {
 		return nil, fmt.Errorf("invalid Cloudflare API base URL: %w", err)
@@ -43,7 +55,51 @@ func newWithBase(apiToken, zoneID, base string, client *http.Client) (*Action, e
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &Action{token: apiToken, zoneID: zoneID, base: strings.TrimRight(base, "/"), client: client}, nil
+	return &Action{
+		token: apiToken, zoneID: zoneID, normalSecurityLevel: normalSecurityLevel,
+		base: strings.TrimRight(base, "/"), client: client,
+	}, nil
+}
+
+func isNormalSecurityLevel(level string) bool {
+	switch level {
+	case "off", "essentially_off", "low", "medium", "high":
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *Action) Initialize(ctx context.Context, mode StartupMode) error {
+	switch mode {
+	case StartupModePreserve:
+		return nil
+	case StartupModeNormal:
+		return a.setNormal(ctx)
+	case StartupModeFighting:
+		return a.Activate(ctx)
+	default:
+		return fmt.Errorf("invalid startup mode %q", mode)
+	}
+}
+
+func (a *Action) setNormal(ctx context.Context) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	current, err := a.getLevel(ctx)
+	if err != nil {
+		return err
+	}
+	if current == a.normalSecurityLevel {
+		a.owned = false
+		return nil
+	}
+	if err := a.setLevel(ctx, a.normalSecurityLevel); err != nil {
+		return err
+	}
+	a.owned = false
+	return nil
 }
 
 func (a *Action) Activate(ctx context.Context) error {
@@ -54,13 +110,12 @@ func (a *Action) Activate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if current == "under_attack" {
+	if current == underAttackLevel {
 		return nil
 	}
-	if err := a.setLevel(ctx, "under_attack"); err != nil {
+	if err := a.setLevel(ctx, underAttackLevel); err != nil {
 		return err
 	}
-	a.previousLevel = current
 	a.owned = true
 	return nil
 }
@@ -78,17 +133,14 @@ func (a *Action) Deactivate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if current != "under_attack" {
-		a.previousLevel = ""
+	if current != underAttackLevel {
 		a.owned = false
 		return nil
 	}
 
-	target := a.previousLevel
-	if err := a.setLevel(ctx, target); err != nil {
+	if err := a.setLevel(ctx, a.normalSecurityLevel); err != nil {
 		return err
 	}
-	a.previousLevel = ""
 	a.owned = false
 	return nil
 }

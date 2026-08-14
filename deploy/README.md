@@ -4,7 +4,7 @@ This deployment runs one active zeta-defender instance. Its `Recreate` strategy
 prevents old and new Pods from overlapping during an update.
 
 Before deploying, update the Prometheus endpoint, expression, and Cloudflare
-zone ID in [`configmap.yaml`](configmap.yaml), and replace the image reference in
+zone ID in [`config.yaml`](config.yaml), and replace the image reference in
 [`deployment.yaml`](deployment.yaml) with the image you published.
 
 Create the Cloudflare API token Secret without storing the token in this
@@ -16,8 +16,18 @@ kubectl create secret generic zeta-defender \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-Then apply the manifests:
+Then apply the manifests from the repository root:
 
 ```sh
-kubectl apply -k deploy
+make -C deploy apply
+```
+
+The apply target prunes obsolete Deployments, Services, and generated
+ConfigMaps with the `app.kubernetes.io/name=zeta-defender` label. Other resource
+kinds and unlabeled resources, including the API token Secret, are not pruned.
+
+Delete the deployed resources while retaining the API token Secret with:
+
+```sh
+make -C deploy delete
 ```

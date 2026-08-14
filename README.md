@@ -5,7 +5,7 @@ Under Attack Mode when that condition remains true.
 
 Its runtime state machine has only three states:
 
-* `standby`
+* `normal`
 * `arming`
 * `fighting`
 
@@ -23,7 +23,7 @@ server:
 metrics:
   endpoint: http://prometheus:9090
   interval: 1m
-  expr: 'sum(rate(http_requests_total{status=~"5.."}[5m])) >= bool 100'
+  expr: 'rate(node_cpu_usage_seconds_total[5m]) / on(node) kube_node_status_allocatable{node=~".*my-pool-1.*",resource="cpu",unit="core"} > bool 0.9'
 
 policy:
   armingChecks: 5
@@ -35,6 +35,10 @@ actions:
   cloudflare:
     apiToken: ${CLOUDFLARE_API_TOKEN}
     zoneID: example-zone-id
+    # Security level applied when returning to normal operation.
+    normalSecurityLevel: medium
+    # Startup mode: preserve, normal, or fighting.
+    startupMode: preserve
 ```
 
 ## Evaluation
@@ -52,14 +56,14 @@ Prefer PromQL `bool` comparisons so the result is explicitly `0` or `1`.
 
 ## Defense cycle
 
-The first true result moves the defender from `standby` to `arming`. This first
+The first true result moves the defender from `normal` to `arming`. This first
 result is not counted toward `armingChecks`.
 
 After `armingChecks` additional consecutive true results, defense is activated
 and the defender enters `fighting`.
 
 A false result while `arming` ends the current attack cycle, returns the defender
-to `standby`, and resets the fighting level to 1.
+to `normal`, and resets the fighting level to 1.
 
 While `fighting`, no metrics requests are made. Defense remains active for:
 
@@ -67,9 +71,11 @@ While `fighting`, no metrics requests are made. Defense remains active for:
 baseDuration * min(level, maxLevel)
 ```
 
-When the fighting period ends, defense is deactivated before metric evaluation
-resumes. The defender then returns to `arming` and observes the unprotected load
-again.
+When the fighting period ends, the defender requests deactivation before metric
+evaluation resumes, then returns to `arming`. If zeta-defender enabled UAM and
+the setting is still `under_attack`, `normalSecurityLevel` is applied and the
+next checks observe the unprotected load again. Out-of-band changes are left
+unchanged.
 
 If arming succeeds again, the attack cycle is considered to be continuing. The
 fighting level is incremented and defense is activated again for the longer
@@ -93,7 +99,7 @@ policy:
 a continuing attack may progress like this:
 
 ```text
-standby
+normal
   -> arming
   -> fighting level 1 for 10m
   -> defense off
@@ -108,19 +114,54 @@ standby
 This gradually reduces how often defense is released during a long-running
 attack while still periodically checking whether protection is still needed.
 
-Re-evaluation requires temporarily removing the defense so the condition can
-observe unprotected load. During a continuing attack, this creates an
-intentional probe window of approximately `interval * armingChecks`.
+When zeta-defender owns the active defense, re-evaluation temporarily removes it
+so the condition can observe unprotected load. During a continuing attack, this
+creates an intentional probe window of approximately
+`interval * armingChecks`.
 
 ## Cloudflare action
 
-The Cloudflare action remembers the zone's previous security level when defense
-is activated and restores it when fighting ends.
+In Cloudflare's API, Under Attack Mode is managed through the
+[`security_level`](https://developers.cloudflare.com/api/resources/zones/subresources/settings/methods/edit/)
+setting. zeta-defender treats its operational meaning as two logical states:
 
-At startup, zeta-defender preserves an existing Under Attack Mode setting. It
-only disables protection that it successfully enabled during the current
-process lifetime. If the process exits or crashes while protection is active,
-the protection is left unchanged and must be disabled manually.
+* **Normal**: `normalSecurityLevel`, applied by `startupMode: normal` and when
+  zeta-defender leaves an owned `fighting` period.
+* **Active defense (`under_attack`)**: [Under Attack Mode](https://developers.cloudflare.com/fundamentals/reference/under-attack-mode/),
+  which presents an interstitial Managed Challenge to help mitigate L7 DDoS
+  attacks.
+
+The API also exposes `off`, `essentially_off`, `low`, `medium`, and `high`.
+Any of these values can be selected as `normalSecurityLevel`; the default is
+`medium`. `under_attack` is reserved for the `fighting` state and is not a valid
+normal level.
+
+> [!NOTE]
+> Under Attack Mode can disrupt clients that cannot process an interstitial
+> HTML challenge, including API clients and webhooks. Use Cloudflare
+> Configuration Rules for scoped Security Level behavior, or Turnstile
+> pre-clearance where appropriate.
+
+The Cloudflare action tracks whether it changed the zone to `under_attack`. It
+applies `normalSecurityLevel` when fighting ends only if it owns that change and
+the setting is still `under_attack`. `startupMode` controls startup behavior:
+
+* `preserve` (default) leaves the existing setting unchanged and starts the
+  controller in `normal`.
+* `normal` immediately applies `normalSecurityLevel` and starts the controller
+  in `normal`.
+* `fighting` immediately applies `under_attack` and starts the controller in
+  fighting level 1 for `baseDuration`.
+
+Pre-existing Under Attack Mode remains unowned in `preserve` mode and is not
+disabled by zeta-defender. The same ownership rule applies when `fighting` is
+selected but UAM was already active: the controller starts fighting, but UAM is
+left active when that period ends. If the process exits or crashes while
+protection is active, the protection is also left unchanged.
+
+zeta-defender applies security levels on startup and state transitions; it does
+not continuously overwrite out-of-band changes made while the controller stays
+in `normal` or `arming`.
 
 zeta-defender currently supports one active instance per Cloudflare zone.
 Running multiple instances against the same zone is not supported.
@@ -132,6 +173,10 @@ The API token is used only in the `Authorization` header and is never logged.
 ```sh
 go run ./cmd/zeta-defender -config config.yaml
 ```
+
+Print the version with `-version`. Logs use the human-readable `text` format
+by default; select structured output with `-log-format json`. The Kubernetes
+deployment enables JSON logs.
 
 `SIGINT` and `SIGTERM` stop metric polling and the HTTP server gracefully.
 Active Cloudflare protection is left unchanged on shutdown.
@@ -161,7 +206,7 @@ Update its ConfigMap and image, create
 the API token Secret as described there, and apply it with:
 
 ```sh
-kubectl apply -k deploy
+make -C deploy apply
 ```
 
 Pull requests and pushes to `main` run formatting, module, vet, race-test, and
@@ -177,7 +222,7 @@ The default listen address is `:8080`.
 
 `zeta_defender_level` is the single state metric:
 
-* `0` — standby
+* `0` — normal
 * `1-99` — arming progress (`1 + successful checks`)
 * `100` — reserved
 * `100 + fightingLevel` — active fighting
@@ -185,7 +230,7 @@ The default listen address is `:8080`.
 For example:
 
 ```text
-0     standby
+0     normal
 1     arming, no successful additional check yet
 2     arming, 1 successful additional check
 ...
@@ -204,10 +249,3 @@ increase(zeta_defender_fighting_seconds_total[1d])
 ```
 
 returns the number of seconds spent fighting during the last day.
-
-Additional counters report:
-
-* condition evaluations
-* evaluation errors
-* Cloudflare enable outcomes
-* Cloudflare disable outcomes

@@ -15,9 +15,6 @@ const maxArmingLevel = 99
 type Metrics struct {
 	registry         *prometheus.Registry
 	level            prometheus.Gauge
-	evaluations      prometheus.Counter
-	evaluationErrors prometheus.Counter
-	actions          *prometheus.CounterVec
 	fightingSeconds  prometheus.CounterFunc
 	now              func() time.Time
 	mu               sync.Mutex
@@ -37,31 +34,14 @@ func newWithNow(now func() time.Time) *Metrics {
 		now:      now,
 		level: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "zeta_defender_level",
-			Help: "Current defender level. 0=standby, 1-99=arming, 101+=fighting.",
+			Help: "Current defender level. 0=normal, 1-99=arming, 101+=fighting.",
 		}),
-		evaluations: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "zeta_defender_evaluations_total",
-			Help: "Total number of Prometheus expression evaluations.",
-		}),
-		evaluationErrors: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "zeta_defender_evaluation_errors_total",
-			Help: "Total number of failed Prometheus expression evaluations.",
-		}),
-		actions: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "zeta_defender_actions_total",
-			Help: "Total number of defender action attempts by action and result.",
-		}, []string{"action", "result"}),
 	}
 	m.fightingSeconds = prometheus.NewCounterFunc(prometheus.CounterOpts{
 		Name: "zeta_defender_fighting_seconds_total",
 		Help: "Total time in seconds that the defender has spent in the fighting state.",
 	}, m.currentFightingSeconds)
-	registry.MustRegister(m.level, m.evaluations, m.evaluationErrors, m.actions, m.fightingSeconds)
-	for _, action := range []string{defender.ActionEnable, defender.ActionDisable} {
-		for _, result := range []string{"success", "error"} {
-			m.actions.WithLabelValues(action, result)
-		}
-	}
+	registry.MustRegister(m.level, m.fightingSeconds)
 	return m
 }
 
@@ -117,22 +97,4 @@ func elapsedSeconds(start, end time.Time) float64 {
 		return 0
 	}
 	return end.Sub(start).Seconds()
-}
-
-func (m *Metrics) ObserveEvaluation(err error) {
-	m.evaluations.Inc()
-	if err != nil {
-		m.evaluationErrors.Inc()
-	}
-}
-
-func (m *Metrics) ObserveAction(action string, err error) {
-	if action != defender.ActionEnable && action != defender.ActionDisable {
-		return
-	}
-	result := "success"
-	if err != nil {
-		result = "error"
-	}
-	m.actions.WithLabelValues(action, result).Inc()
 }

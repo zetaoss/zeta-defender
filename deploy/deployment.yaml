@@ -24,6 +24,8 @@ spec:
           args:
             - -config
             - /etc/zeta-defender/config.yaml
+            - -log-format
+            - json
           env:
             - name: CLOUDFLARE_API_TOKEN
               valueFrom:

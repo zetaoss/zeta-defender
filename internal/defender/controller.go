@@ -15,7 +15,7 @@ import (
 type State string
 
 const (
-	Standby  State = "standby"
+	Normal   State = "normal"
 	Arming   State = "arming"
 	Fighting State = "fighting"
 )
@@ -26,24 +26,15 @@ type Policy struct {
 	MaxLevel     int
 }
 
-const (
-	ActionEnable  = "enable"
-	ActionDisable = "disable"
-)
-
 // Observer receives a one-way projection of controller activity. Implementations
 // must not use observations to modify controller state.
 type Observer interface {
 	ObserveLevel(State, int, int)
-	ObserveEvaluation(error)
-	ObserveAction(string, error)
 }
 
 type noopObserver struct{}
 
 func (noopObserver) ObserveLevel(State, int, int) {}
-func (noopObserver) ObserveEvaluation(error)      {}
-func (noopObserver) ObserveAction(string, error)  {}
 
 type Option func(*Controller)
 
@@ -52,6 +43,14 @@ func WithObserver(observer Observer) Option {
 		if observer != nil {
 			c.observer = observer
 		}
+	}
+}
+
+func WithInitialFighting() Option {
+	return func(c *Controller) {
+		c.state = Fighting
+		c.foughtInCycle = true
+		c.fightingUntil = c.clock.Now().Add(c.FightingDuration())
 	}
 }
 
@@ -109,7 +108,7 @@ func newWithClock(provider metrics.Provider, act action.Action, policy Policy, i
 	}
 	c := &Controller{
 		provider: provider, action: act, policy: policy, interval: interval,
-		clock: clock, logger: logger, observer: noopObserver{}, state: Standby, fightingLevel: 1,
+		clock: clock, logger: logger, observer: noopObserver{}, state: Normal, fightingLevel: 1,
 	}
 	for _, option := range options {
 		option(c)
@@ -132,10 +131,8 @@ func (c *Controller) Tick(ctx context.Context) error {
 			return nil
 		}
 		if err := c.action.Deactivate(ctx); err != nil {
-			c.observer.ObserveAction(ActionDisable, err)
 			return fmt.Errorf("deactivate defense: %w", err)
 		}
-		c.observer.ObserveAction(ActionDisable, nil)
 		c.transition(Arming)
 		c.armingChecks = 0
 		c.observeLevel()
@@ -143,7 +140,6 @@ func (c *Controller) Tick(ctx context.Context) error {
 	}
 
 	matched, err := c.provider.Evaluate(ctx)
-	c.observer.ObserveEvaluation(err)
 	if err != nil {
 		if c.state == Arming && c.armingChecks != 0 {
 			c.armingChecks = 0
@@ -156,7 +152,7 @@ func (c *Controller) Tick(ctx context.Context) error {
 
 func (c *Controller) applyEvaluation(ctx context.Context, matched bool) error {
 	switch c.state {
-	case Standby:
+	case Normal:
 		if matched {
 			c.armingChecks = 0
 			c.transition(Arming)
@@ -167,7 +163,7 @@ func (c *Controller) applyEvaluation(ctx context.Context, matched bool) error {
 			c.armingChecks = 0
 			c.fightingLevel = 1
 			c.foughtInCycle = false
-			c.transition(Standby)
+			c.transition(Normal)
 			c.observeLevel()
 			return nil
 		}
@@ -177,11 +173,9 @@ func (c *Controller) applyEvaluation(ctx context.Context, matched bool) error {
 			return nil
 		}
 		if err := c.action.Activate(ctx); err != nil {
-			c.observer.ObserveAction(ActionEnable, err)
 			c.observeLevel()
 			return fmt.Errorf("activate defense: %w", err)
 		}
-		c.observer.ObserveAction(ActionEnable, nil)
 		if c.foughtInCycle && c.fightingLevel < c.policy.MaxLevel {
 			c.fightingLevel++
 		}
