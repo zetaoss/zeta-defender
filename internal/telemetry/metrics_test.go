@@ -1,7 +1,6 @@
 package telemetry
 
 import (
-	"errors"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -22,7 +21,7 @@ func TestLevelEncoding(t *testing.T) {
 		fightingLevel int
 		want          float64
 	}{
-		{"standby", defender.Standby, 0, 1, 0},
+		{"normal", defender.Normal, 0, 1, 0},
 		{"arming entered", defender.Arming, 0, 1, 1},
 		{"arming progress", defender.Arming, 4, 1, 5},
 		{"arming boundary", defender.Arming, 200, 1, 99},
@@ -37,33 +36,6 @@ func TestLevelEncoding(t *testing.T) {
 				t.Fatalf("level=%v, want %v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestCounters(t *testing.T) {
-	m := New()
-	m.ObserveEvaluation(nil)
-	m.ObserveEvaluation(errors.New("query failed"))
-	if got := testutil.ToFloat64(m.evaluations); got != 2 {
-		t.Fatalf("evaluations=%v", got)
-	}
-	if got := testutil.ToFloat64(m.evaluationErrors); got != 1 {
-		t.Fatalf("evaluation errors=%v", got)
-	}
-
-	m.ObserveAction(defender.ActionEnable, nil)
-	m.ObserveAction(defender.ActionEnable, errors.New("failed"))
-	m.ObserveAction(defender.ActionDisable, nil)
-	m.ObserveAction(defender.ActionDisable, errors.New("failed"))
-	for _, labels := range [][]string{
-		{defender.ActionEnable, "success"},
-		{defender.ActionEnable, "error"},
-		{defender.ActionDisable, "success"},
-		{defender.ActionDisable, "error"},
-	} {
-		if got := testutil.ToFloat64(m.actions.WithLabelValues(labels...)); got != 1 {
-			t.Fatalf("actions%v=%v", labels, got)
-		}
 	}
 }
 
@@ -104,14 +76,20 @@ func TestMetricsExposition(t *testing.T) {
 		"# HELP zeta_defender_level ",
 		"# TYPE zeta_defender_level gauge",
 		"zeta_defender_level 103",
-		"zeta_defender_evaluations_total",
-		"zeta_defender_evaluation_errors_total",
 		"# TYPE zeta_defender_fighting_seconds_total counter",
 		"zeta_defender_fighting_seconds_total",
-		`zeta_defender_actions_total{action="enable",result="success"}`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Errorf("exposition does not contain %q", expected)
+		}
+	}
+	for _, unexpected := range []string{
+		"zeta_defender_evaluations_total",
+		"zeta_defender_evaluation_errors_total",
+		"zeta_defender_actions_total",
+	} {
+		if strings.Contains(body, unexpected) {
+			t.Errorf("exposition contains removed metric %q", unexpected)
 		}
 	}
 }
@@ -125,7 +103,6 @@ func TestConcurrentScrapeAndUpdates(t *testing.T) {
 			defer wg.Done()
 			for level := 1; level <= 500; level++ {
 				m.ObserveLevel(defender.Fighting, 0, level)
-				m.ObserveEvaluation(nil)
 			}
 		}()
 		go func() {

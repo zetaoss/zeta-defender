@@ -75,9 +75,18 @@ type ActionsConfig struct {
 }
 
 type CloudflareConfig struct {
-	APIToken string `yaml:"apiToken"`
-	ZoneID   string `yaml:"zoneID"`
+	APIToken            string `yaml:"apiToken"`
+	ZoneID              string `yaml:"zoneID"`
+	NormalSecurityLevel string `yaml:"normalSecurityLevel"`
+	StartupMode         string `yaml:"startupMode"`
 }
+
+const (
+	DefaultNormalSecurityLevel = "medium"
+	StartupModePreserve        = "preserve"
+	StartupModeNormal          = "normal"
+	StartupModeFighting        = "fighting"
+)
 
 func Load(path string) (Config, error) {
 	b, err := os.ReadFile(path)
@@ -90,6 +99,14 @@ func Load(path string) (Config, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
+	}
+	if cfg.Actions.Cloudflare != nil {
+		if cfg.Actions.Cloudflare.NormalSecurityLevel == "" {
+			cfg.Actions.Cloudflare.NormalSecurityLevel = DefaultNormalSecurityLevel
+		}
+		if cfg.Actions.Cloudflare.StartupMode == "" {
+			cfg.Actions.Cloudflare.StartupMode = StartupModePreserve
+		}
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -128,6 +145,16 @@ func (c Config) Validate() error {
 		}
 		if strings.TrimSpace(c.Actions.Cloudflare.ZoneID) == "" {
 			errs = append(errs, errors.New("actions.cloudflare.zoneID is required"))
+		}
+		switch c.Actions.Cloudflare.NormalSecurityLevel {
+		case "off", "essentially_off", "low", "medium", "high":
+		default:
+			errs = append(errs, errors.New("actions.cloudflare.normalSecurityLevel must be off, essentially_off, low, medium, or high"))
+		}
+		switch c.Actions.Cloudflare.StartupMode {
+		case StartupModePreserve, StartupModeNormal, StartupModeFighting:
+		default:
+			errs = append(errs, errors.New("actions.cloudflare.startupMode must be preserve, normal, or fighting"))
 		}
 	}
 	return errors.Join(errs...)

@@ -2,7 +2,7 @@ server:
   listen: ":8080"
 
 metrics:
-  endpoint: http://prometheus:9090
+  endpoint: http://prometheus.monitoring.svc.cluster.local:9090
   interval: 1m
   expr: 'rate(node_cpu_usage_seconds_total[5m]) / on(node) kube_node_status_allocatable{node=~".*my-pool-1.*",resource="cpu",unit="core"} > bool 0.9'
 
