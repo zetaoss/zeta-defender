@@ -16,14 +16,14 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w -X main.version=${VERSION}" \
-    -o /out/defenderctl \
-    ./cmd/defenderctl
+    -o /out/defendertool \
+    ./cmd/defendertool
 
-FROM scratch
+FROM alpine:3.24.1
 
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /out/defender /defender
-COPY --from=build /out/defenderctl /defenderctl
+COPY --from=build /out/defendertool /defendertool
 
 USER 65532:65532
 EXPOSE 8080

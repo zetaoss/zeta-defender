@@ -177,23 +177,16 @@ go run ./cmd/defender -config config.yaml
 ```
 
 Print either binary's version with `defender -version` or
-`defenderctl -version`. Logs use the human-readable `text` format by default;
+`defendertool version`. Logs use the human-readable `text` format by default;
 select structured output with `-log-format json`. The Kubernetes deployment
 enables JSON logs.
 
-Query or change the zone's current Cloudflare security level with the companion
+Query the zone's current Cloudflare security level with the read-only companion
 CLI. It uses the same configuration file as the daemon:
 
 ```sh
-go run ./cmd/defenderctl -config config.yaml get
-go run ./cmd/defenderctl -config config.yaml set high
-go run ./cmd/defenderctl -config config.yaml set under_attack
+go run ./cmd/defendertool -config config.yaml status
 ```
-
-Accepted values are `off`, `essentially_off`, `low`, `medium`, `high`, and
-`under_attack`. A manual change is out-of-band from the controller: in
-particular, the controller will not claim ownership of an already active
-`under_attack` setting.
 
 `SIGINT` and `SIGTERM` stop metric polling and the HTTP server gracefully.
 Active Cloudflare protection is left unchanged on shutdown.
@@ -224,6 +217,14 @@ the API token Secret as described there, and apply it with:
 
 ```sh
 make -C deploy apply
+```
+
+The runtime image includes Alpine's `sh` for operational inspection. To query
+the current Cloudflare security level from the running Pod:
+
+```sh
+kubectl exec -it deploy/zeta-defender -- sh
+/defendertool -config /etc/zeta-defender/config.yaml status
 ```
 
 Pull requests and pushes to `main` run formatting, module, vet, race-test, and

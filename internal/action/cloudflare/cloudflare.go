@@ -70,25 +70,11 @@ func isNormalSecurityLevel(level string) bool {
 	}
 }
 
-func isSecurityLevel(level string) bool {
-	return level == underAttackLevel || isNormalSecurityLevel(level)
-}
-
 // SecurityLevel returns the zone's current Cloudflare security level.
 func (a *Action) SecurityLevel(ctx context.Context) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.getLevel(ctx)
-}
-
-// SetSecurityLevel changes the zone's Cloudflare security level.
-func (a *Action) SetSecurityLevel(ctx context.Context, level string) error {
-	if !isSecurityLevel(level) {
-		return fmt.Errorf("invalid security level %q", level)
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.setLevel(ctx, level)
 }
 
 func (a *Action) Initialize(ctx context.Context, mode StartupMode) error {

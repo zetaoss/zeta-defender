@@ -19,7 +19,6 @@ var version = "dev"
 
 type securityLevelService interface {
 	SecurityLevel(context.Context) (string, error)
-	SetSecurityLevel(context.Context, string) error
 }
 
 type dependencies struct {
@@ -39,21 +38,16 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
-	flags := flag.NewFlagSet("defenderctl", flag.ContinueOnError)
+	flags := flag.NewFlagSet("defendertool", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	configPath := flags.String("config", "config.yaml", "path to the YAML configuration file")
-	showVersion := flags.Bool("version", false, "display version and exit")
 	flags.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: defenderctl [-config path] get")
-		_, _ = fmt.Fprintln(stderr, "       defenderctl [-config path] set <off|essentially_off|low|medium|high|under_attack>")
+		_, _ = fmt.Fprintln(stderr, "Usage: defendertool [-config path] status")
+		_, _ = fmt.Fprintln(stderr, "       defendertool version")
 		flags.PrintDefaults()
 	}
 	if err := flags.Parse(args); err != nil {
 		return 2
-	}
-	if *showVersion {
-		_, _ = fmt.Fprintln(stdout, "defenderctl", version)
-		return 0
 	}
 
 	commandArgs := flags.Args()
@@ -62,14 +56,18 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		return 2
 	}
 	command := commandArgs[0]
-	if (command == "get" && len(commandArgs) != 1) || (command == "set" && len(commandArgs) != 2) {
+	if (command == "status" || command == "version") && len(commandArgs) != 1 {
 		flags.Usage()
 		return 2
 	}
-	if command != "get" && command != "set" {
+	if command != "status" && command != "version" {
 		_, _ = fmt.Fprintf(stderr, "unknown command %q\n", command)
 		flags.Usage()
 		return 2
+	}
+	if command == "version" {
+		_, _ = fmt.Fprintln(stdout, "defendertool", version)
+		return 0
 	}
 
 	cfg, err := deps.loadConfig(*configPath)
@@ -91,21 +89,11 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
 
-	switch command {
-	case "get":
-		level, err := service.SecurityLevel(ctx)
-		if err != nil {
-			_, _ = fmt.Fprintf(stderr, "get security level: %v\n", err)
-			return 1
-		}
-		_, _ = fmt.Fprintln(stdout, level)
-	case "set":
-		level := commandArgs[1]
-		if err := service.SetSecurityLevel(ctx, level); err != nil {
-			_, _ = fmt.Fprintf(stderr, "set security level: %v\n", err)
-			return 1
-		}
-		_, _ = fmt.Fprintln(stdout, level)
+	level, err := service.SecurityLevel(ctx)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "get security level: %v\n", err)
+		return 1
 	}
+	_, _ = fmt.Fprintln(stdout, level)
 	return 0
 }
