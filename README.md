@@ -173,12 +173,27 @@ The API token is used only in the `Authorization` header and is never logged.
 ## Run
 
 ```sh
-go run ./cmd/zeta-defender -config config.yaml
+go run ./cmd/defender -config config.yaml
 ```
 
-Print the version with `-version`. Logs use the human-readable `text` format
-by default; select structured output with `-log-format json`. The Kubernetes
-deployment enables JSON logs.
+Print either binary's version with `defender -version` or
+`defenderctl -version`. Logs use the human-readable `text` format by default;
+select structured output with `-log-format json`. The Kubernetes deployment
+enables JSON logs.
+
+Query or change the zone's current Cloudflare security level with the companion
+CLI. It uses the same configuration file as the daemon:
+
+```sh
+go run ./cmd/defenderctl -config config.yaml get
+go run ./cmd/defenderctl -config config.yaml set high
+go run ./cmd/defenderctl -config config.yaml set under_attack
+```
+
+Accepted values are `off`, `essentially_off`, `low`, `medium`, `high`, and
+`under_attack`. A manual change is out-of-band from the controller: in
+particular, the controller will not claim ownership of an already active
+`under_attack` setting.
 
 `SIGINT` and `SIGTERM` stop metric polling and the HTTP server gracefully.
 Active Cloudflare protection is left unchanged on shutdown.

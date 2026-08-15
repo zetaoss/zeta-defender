@@ -31,7 +31,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		_, _ = fmt.Fprintln(os.Stdout, "zeta-defender", version)
+		_, _ = fmt.Fprintln(os.Stdout, "defender", version)
 		return
 	}
 

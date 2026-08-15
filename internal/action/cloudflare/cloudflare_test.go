@@ -122,6 +122,41 @@ func TestNewRejectsInvalidNormalSecurityLevel(t *testing.T) {
 	}
 }
 
+func TestSecurityLevelManagement(t *testing.T) {
+	level := "medium"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			var body struct {
+				Value string `json:"value"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+				return
+			}
+			level = body.Value
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true, "result": map[string]string{"value": level},
+		})
+	}))
+	defer srv.Close()
+
+	a, _ := newWithBase("token", "zone", "medium", srv.URL, srv.Client())
+	got, err := a.SecurityLevel(context.Background())
+	if err != nil || got != "medium" {
+		t.Fatalf("level=%q err=%v", got, err)
+	}
+	if err := a.SetSecurityLevel(context.Background(), "under_attack"); err != nil {
+		t.Fatal(err)
+	}
+	if level != "under_attack" {
+		t.Fatalf("level=%q", level)
+	}
+	if err := a.SetSecurityLevel(context.Background(), "invalid"); err == nil {
+		t.Fatal("expected invalid level error")
+	}
+}
+
 func TestExistingUnderAttackModeIsNotOwnedOrDeactivated(t *testing.T) {
 	level := "under_attack"
 	patches := 0
