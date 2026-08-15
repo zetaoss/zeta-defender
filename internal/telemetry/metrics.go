@@ -10,7 +10,11 @@ import (
 	"github.com/zetaoss/zeta-defender/internal/defender"
 )
 
-const maxArmingLevel = 99
+const (
+	armingLevelBase   = 100
+	fightingLevelBase = 200
+	maxLevelOffset    = 99
+)
 
 type Metrics struct {
 	registry         *prometheus.Registry
@@ -34,7 +38,7 @@ func newWithNow(now func() time.Time) *Metrics {
 		now:      now,
 		level: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "zeta_defender_level",
-			Help: "Current defender level. 0=normal, 1-99=arming, 101+=fighting.",
+			Help: "Current defender level. 0xx=normal, 1xx=arming, 2xx=fighting.",
 		}),
 	}
 	m.fightingSeconds = prometheus.NewCounterFunc(prometheus.CounterOpts{
@@ -49,20 +53,27 @@ func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
 }
 
-func (m *Metrics) ObserveLevel(state defender.State, armingChecks, fightingLevel int) {
+func (m *Metrics) ObserveLevel(state defender.State, armingLevel, fightingLevel int) {
 	m.observeFightingTime(state)
 
 	var level int
 	switch state {
 	case defender.Arming:
-		level = 1 + armingChecks
-		if level > maxArmingLevel {
-			level = maxArmingLevel
-		}
+		level = armingLevelBase + clampLevelOffset(armingLevel)
 	case defender.Fighting:
-		level = 100 + fightingLevel
+		level = fightingLevelBase + clampLevelOffset(fightingLevel)
 	}
 	m.level.Set(float64(level))
+}
+
+func clampLevelOffset(level int) int {
+	if level < 0 {
+		return 0
+	}
+	if level > maxLevelOffset {
+		return maxLevelOffset
+	}
+	return level
 }
 
 func (m *Metrics) observeFightingTime(state defender.State) {

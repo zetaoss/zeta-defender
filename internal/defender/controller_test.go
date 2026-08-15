@@ -65,7 +65,7 @@ func (c *fakeClock) NewTimer(time.Duration) Timer {
 
 type observation struct {
 	state         State
-	armingChecks  int
+	armingLevel   int
 	fightingLevel int
 }
 
@@ -73,16 +73,16 @@ type recordingObserver struct {
 	levels []observation
 }
 
-func (o *recordingObserver) ObserveLevel(state State, armingChecks, fightingLevel int) {
-	o.levels = append(o.levels, observation{state, armingChecks, fightingLevel})
+func (o *recordingObserver) ObserveLevel(state State, armingLevel, fightingLevel int) {
+	o.levels = append(o.levels, observation{state, armingLevel, fightingLevel})
 }
 
-func newTestController(t *testing.T, checks, maxLevel int, p *fakeProvider, a *fakeAction, clock *fakeClock) *Controller {
+func newTestController(t *testing.T, armingLevels, fightingLevels int, p *fakeProvider, a *fakeAction, clock *fakeClock) *Controller {
 	t.Helper()
 	c, err := newWithClock(p, a, Policy{
-		ArmingChecks: checks,
-		BaseDuration: 10 * time.Minute,
-		MaxLevel:     maxLevel,
+		ArmingLevels:          armingLevels,
+		FightingLevelDuration: 10 * time.Minute,
+		FightingLevels:        fightingLevels,
 	}, time.Minute, slog.New(slog.NewTextHandler(io.Discard, nil)), clock)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func tick(t *testing.T, c *Controller) error {
 	return c.Tick(context.Background())
 }
 
-func TestNormalAndArmingChecks(t *testing.T) {
+func TestNormalAndArmingLevels(t *testing.T) {
 	p := &fakeProvider{results: []metricResult{{value: false}, {value: true}, {value: true}, {value: true}}}
 	a := &fakeAction{}
 	c := newTestController(t, 2, 3, p, a, &fakeClock{})
@@ -103,14 +103,14 @@ func TestNormalAndArmingChecks(t *testing.T) {
 	if err := tick(t, c); err != nil || c.State() != Normal {
 		t.Fatalf("false normal tick: state=%s err=%v", c.State(), err)
 	}
-	if err := tick(t, c); err != nil || c.State() != Arming || c.ArmingCheckCount() != 0 {
-		t.Fatalf("first true must only arm: state=%s checks=%d err=%v", c.State(), c.ArmingCheckCount(), err)
+	if err := tick(t, c); err != nil || c.State() != Arming || c.ArmingLevel() != 0 {
+		t.Fatalf("first true must only arm: state=%s arming_level=%d err=%v", c.State(), c.ArmingLevel(), err)
 	}
-	if err := tick(t, c); err != nil || c.State() != Arming || c.ArmingCheckCount() != 1 || a.activations != 0 {
-		t.Fatalf("first arming check: state=%s checks=%d activations=%d", c.State(), c.ArmingCheckCount(), a.activations)
+	if err := tick(t, c); err != nil || c.State() != Arming || c.ArmingLevel() != 1 || a.activations != 0 {
+		t.Fatalf("arming level 1: state=%s arming_level=%d activations=%d", c.State(), c.ArmingLevel(), a.activations)
 	}
 	if err := tick(t, c); err != nil || c.State() != Fighting || a.activations != 1 {
-		t.Fatalf("second arming check: state=%s activations=%d err=%v", c.State(), a.activations, err)
+		t.Fatalf("arming completion: state=%s activations=%d err=%v", c.State(), a.activations, err)
 	}
 }
 
@@ -119,7 +119,7 @@ func TestObserverReceivesRuntimeProjection(t *testing.T) {
 	p := &fakeProvider{results: []metricResult{{value: true}, {value: true}, {value: false}}}
 	a := &fakeAction{}
 	observer := &recordingObserver{}
-	c, err := newWithClock(p, a, Policy{ArmingChecks: 1, BaseDuration: time.Minute, MaxLevel: 2}, time.Second, nil, clock, WithObserver(observer))
+	c, err := newWithClock(p, a, Policy{ArmingLevels: 1, FightingLevelDuration: time.Minute, FightingLevels: 2}, time.Second, nil, clock, WithObserver(observer))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestObserverReceivesRuntimeProjection(t *testing.T) {
 	want := []observation{
 		{Normal, 0, 1},
 		{Arming, 0, 1},
-		{Fighting, 1, 1},
+		{Fighting, 0, 1},
 		{Arming, 0, 1},
 		{Normal, 0, 1},
 	}
@@ -156,8 +156,8 @@ func TestArmingFalseReturnsToNormalAndResets(t *testing.T) {
 	if err := tick(t, c); err != nil {
 		t.Fatal(err)
 	}
-	if c.State() != Normal || c.ArmingCheckCount() != 0 || c.FightingLevel() != 1 || c.foughtInCycle {
-		t.Fatalf("reset failed: state=%s checks=%d level=%d", c.State(), c.ArmingCheckCount(), c.FightingLevel())
+	if c.State() != Normal || c.ArmingLevel() != 0 || c.FightingLevel() != 1 || c.foughtInCycle {
+		t.Fatalf("reset failed: state=%s arming_level=%d fighting_level=%d", c.State(), c.ArmingLevel(), c.FightingLevel())
 	}
 }
 
@@ -168,6 +168,9 @@ func TestActivateFailureKeepsArmingAndRetries(t *testing.T) {
 	_ = tick(t, c)
 	if err := tick(t, c); err == nil || c.State() != Arming {
 		t.Fatalf("activation failure: state=%s err=%v", c.State(), err)
+	}
+	if c.ArmingLevel() != 0 {
+		t.Fatalf("activation failure advanced past final arming level: level=%d", c.ArmingLevel())
 	}
 	if err := tick(t, c); err != nil || c.State() != Fighting || a.activations != 2 {
 		t.Fatalf("activation retry: state=%s attempts=%d err=%v", c.State(), a.activations, err)
@@ -193,19 +196,19 @@ func TestFightingDoesNotPollAndDeactivationControlsTransition(t *testing.T) {
 	if err := tick(t, c); err == nil || c.State() != Fighting || a.deactivations != 1 || p.calls != 2 {
 		t.Fatalf("failed deactivation changed state: state=%s err=%v", c.State(), err)
 	}
-	if err := tick(t, c); err != nil || c.State() != Arming || c.ArmingCheckCount() != 0 || a.deactivations != 2 {
+	if err := tick(t, c); err != nil || c.State() != Arming || c.ArmingLevel() != 0 || a.deactivations != 2 {
 		t.Fatalf("deactivation retry: state=%s attempts=%d err=%v", c.State(), a.deactivations, err)
 	}
 }
 
-func TestInitialFightingStartsProtectedAndDeactivatesAfterBaseDuration(t *testing.T) {
+func TestInitialFightingStartsProtectedAndDeactivatesAfterLevelDuration(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(100, 0)}
 	p := &fakeProvider{}
 	a := &fakeAction{}
 	c, err := newWithClock(p, a, Policy{
-		ArmingChecks: 1,
-		BaseDuration: 10 * time.Minute,
-		MaxLevel:     3,
+		ArmingLevels:          1,
+		FightingLevelDuration: 10 * time.Minute,
+		FightingLevels:        3,
 	}, time.Minute, nil, clock, WithInitialFighting())
 	if err != nil {
 		t.Fatal(err)
@@ -257,14 +260,14 @@ func TestMetricsErrorsResetArmingProgress(t *testing.T) {
 	if err := tick(t, c); !errors.Is(err, metricErr) {
 		t.Fatalf("expected wrapped metrics error, got %v", err)
 	}
-	if c.State() != Arming || c.ArmingCheckCount() != 0 || a.activations != 0 {
-		t.Fatalf("metrics error did not reset progress: state=%s checks=%d", c.State(), c.ArmingCheckCount())
+	if c.State() != Arming || c.ArmingLevel() != 0 || a.activations != 0 {
+		t.Fatalf("metrics error did not reset progress: state=%s arming_level=%d", c.State(), c.ArmingLevel())
 	}
-	if err := tick(t, c); err != nil || c.State() != Arming || c.ArmingCheckCount() != 1 {
-		t.Fatalf("first check after error: state=%s checks=%d err=%v", c.State(), c.ArmingCheckCount(), err)
+	if err := tick(t, c); err != nil || c.State() != Arming || c.ArmingLevel() != 1 {
+		t.Fatalf("first match after error: state=%s arming_level=%d err=%v", c.State(), c.ArmingLevel(), err)
 	}
 	if err := tick(t, c); err != nil || c.State() != Fighting {
-		t.Fatalf("second check after error should complete arming: state=%s err=%v", c.State(), err)
+		t.Fatalf("second match after error should complete arming: state=%s err=%v", c.State(), err)
 	}
 }
 

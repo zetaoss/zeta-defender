@@ -17,21 +17,22 @@ func TestLevelEncoding(t *testing.T) {
 	tests := []struct {
 		name          string
 		state         defender.State
-		armingChecks  int
+		armingLevel   int
 		fightingLevel int
 		want          float64
 	}{
 		{"normal", defender.Normal, 0, 1, 0},
-		{"arming entered", defender.Arming, 0, 1, 1},
-		{"arming progress", defender.Arming, 4, 1, 5},
-		{"arming boundary", defender.Arming, 200, 1, 99},
-		{"fighting level 1", defender.Fighting, 0, 1, 101},
-		{"fighting level 2", defender.Fighting, 0, 2, 102},
-		{"fighting level N", defender.Fighting, 0, 12, 112},
+		{"arming entered", defender.Arming, 0, 1, 100},
+		{"arming progress", defender.Arming, 4, 1, 104},
+		{"arming boundary", defender.Arming, 200, 1, 199},
+		{"fighting level 1", defender.Fighting, 0, 1, 201},
+		{"fighting level 2", defender.Fighting, 0, 2, 202},
+		{"fighting level N", defender.Fighting, 0, 12, 212},
+		{"fighting boundary", defender.Fighting, 0, 200, 299},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m.ObserveLevel(tt.state, tt.armingChecks, tt.fightingLevel)
+			m.ObserveLevel(tt.state, tt.armingLevel, tt.fightingLevel)
 			if got := testutil.ToFloat64(m.level); got != tt.want {
 				t.Fatalf("level=%v, want %v", got, tt.want)
 			}
@@ -75,7 +76,7 @@ func TestMetricsExposition(t *testing.T) {
 	for _, expected := range []string{
 		"# HELP zeta_defender_level ",
 		"# TYPE zeta_defender_level gauge",
-		"zeta_defender_level 103",
+		"zeta_defender_level 203",
 		"# TYPE zeta_defender_fighting_seconds_total counter",
 		"zeta_defender_fighting_seconds_total",
 	} {

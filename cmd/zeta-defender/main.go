@@ -75,9 +75,9 @@ func main() {
 		controllerOptions = append(controllerOptions, defender.WithInitialFighting())
 	}
 	controller, err := defender.New(provider, act, defender.Policy{
-		ArmingChecks: cfg.Policy.ArmingChecks,
-		BaseDuration: cfg.Policy.Fighting.BaseDuration,
-		MaxLevel:     cfg.Policy.Fighting.MaxLevel,
+		ArmingLevels:          cfg.Policy.Arming.Levels,
+		FightingLevelDuration: cfg.Policy.Fighting.LevelDuration,
+		FightingLevels:        cfg.Policy.Fighting.Levels,
 	}, cfg.Metrics.Interval, logger, controllerOptions...)
 	if err != nil {
 		logger.Error("failed to create controller", "error", err)

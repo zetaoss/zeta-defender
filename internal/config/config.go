@@ -45,28 +45,42 @@ func (c *MetricsConfig) UnmarshalYAML(node *yaml.Node) error {
 }
 
 type PolicyConfig struct {
-	ArmingChecks int            `yaml:"armingChecks"`
-	Fighting     FightingConfig `yaml:"fighting"`
+	Arming   ArmingConfig   `yaml:"arming"`
+	Fighting FightingConfig `yaml:"fighting"`
+}
+
+type ArmingConfig struct {
+	Levels int `yaml:"levels"`
 }
 
 type FightingConfig struct {
-	BaseDuration time.Duration `yaml:"-"`
-	MaxLevel     int           `yaml:"maxLevel"`
+	LevelDuration time.Duration `yaml:"-"`
+	Levels        int           `yaml:"levels"`
 }
 
 func (c *FightingConfig) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return errors.New("policy.fighting must be a mapping")
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		switch node.Content[i].Value {
+		case "levelDuration", "levels":
+		default:
+			return fmt.Errorf("unknown policy.fighting field %q", node.Content[i].Value)
+		}
+	}
 	var raw struct {
-		BaseDuration string `yaml:"baseDuration"`
-		MaxLevel     int    `yaml:"maxLevel"`
+		LevelDuration string `yaml:"levelDuration"`
+		Levels        int    `yaml:"levels"`
 	}
 	if err := node.Decode(&raw); err != nil {
 		return err
 	}
-	d, err := time.ParseDuration(raw.BaseDuration)
+	d, err := time.ParseDuration(raw.LevelDuration)
 	if err != nil {
-		return fmt.Errorf("policy.fighting.baseDuration: %w", err)
+		return fmt.Errorf("policy.fighting.levelDuration: %w", err)
 	}
-	c.BaseDuration, c.MaxLevel = d, raw.MaxLevel
+	c.LevelDuration, c.Levels = d, raw.Levels
 	return nil
 }
 
@@ -86,6 +100,7 @@ const (
 	StartupModePreserve        = "preserve"
 	StartupModeNormal          = "normal"
 	StartupModeFighting        = "fighting"
+	maxPolicyLevels            = 99
 )
 
 func Load(path string) (Config, error) {
@@ -128,14 +143,18 @@ func (c Config) Validate() error {
 	if c.Metrics.Interval <= 0 {
 		errs = append(errs, errors.New("metrics.interval must be positive"))
 	}
-	if c.Policy.ArmingChecks <= 0 {
-		errs = append(errs, errors.New("policy.armingChecks must be positive"))
+	if c.Policy.Arming.Levels < 1 {
+		errs = append(errs, errors.New("policy.arming.levels must be at least 1"))
+	} else if c.Policy.Arming.Levels > maxPolicyLevels {
+		errs = append(errs, fmt.Errorf("policy.arming.levels must be at most %d", maxPolicyLevels))
 	}
-	if c.Policy.Fighting.BaseDuration <= 0 {
-		errs = append(errs, errors.New("policy.fighting.baseDuration must be positive"))
+	if c.Policy.Fighting.LevelDuration <= 0 {
+		errs = append(errs, errors.New("policy.fighting.levelDuration must be positive"))
 	}
-	if c.Policy.Fighting.MaxLevel < 1 {
-		errs = append(errs, errors.New("policy.fighting.maxLevel must be at least 1"))
+	if c.Policy.Fighting.Levels < 1 {
+		errs = append(errs, errors.New("policy.fighting.levels must be at least 1"))
+	} else if c.Policy.Fighting.Levels > maxPolicyLevels {
+		errs = append(errs, fmt.Errorf("policy.fighting.levels must be at most %d", maxPolicyLevels))
 	}
 	if c.Actions.Cloudflare == nil {
 		errs = append(errs, errors.New("actions.cloudflare is required"))

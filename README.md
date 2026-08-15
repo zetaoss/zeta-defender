@@ -26,10 +26,11 @@ metrics:
   expr: 'rate(node_cpu_usage_seconds_total[5m]) / on(node) kube_node_status_allocatable{node=~".*my-pool-1.*",resource="cpu",unit="core"} > bool 0.9'
 
 policy:
-  armingChecks: 5
+  arming:
+    levels: 5
   fighting:
-    baseDuration: 10m
-    maxLevel: 12
+    levelDuration: 10m
+    levels: 12
 
 actions:
   cloudflare:
@@ -50,38 +51,38 @@ The Prometheus result may be a scalar or instant vector.
 * For a vector, any true sample makes the result true.
 * An empty vector means false.
 
-Evaluation errors do not count as successful checks and reset arming progress.
+Evaluation errors reset arming progress.
 
 Prefer PromQL `bool` comparisons so the result is explicitly `0` or `1`.
 
 ## Defense cycle
 
-The first true result moves the defender from `normal` to `arming`. This first
-result is not counted toward `armingChecks`.
+The first matching evaluation moves the defender from `normal` to arming level
+0. Arming exposes `policy.arming.levels` levels, numbered from 0. Each additional
+consecutive matching evaluation advances one level; a match after the final
+arming level activates defense and moves the defender to `fighting`.
 
-After `armingChecks` additional consecutive true results, defense is activated
-and the defender enters `fighting`.
-
-A false result while `arming` ends the current attack cycle, returns the defender
-to `normal`, and resets the fighting level to 1.
+A non-matching evaluation while `arming` ends the current attack cycle, returns
+the defender to `normal`, and resets the fighting level to 1.
 
 While `fighting`, no metrics requests are made. Defense remains active for:
 
 ```text
-baseDuration * min(level, maxLevel)
+levelDuration * fighting level
 ```
 
 When the fighting period ends, the defender requests deactivation before metric
 evaluation resumes, then returns to `arming`. If zeta-defender enabled UAM and
 the setting is still `under_attack`, `normalSecurityLevel` is applied and the
-next checks observe the unprotected load again. Out-of-band changes are left
+next evaluations observe the unprotected load again. Out-of-band changes are left
 unchanged.
 
-If arming succeeds again, the attack cycle is considered to be continuing. The
-fighting level is incremented and defense is activated again for the longer
-duration.
+If evaluations continue to match the condition through every arming level, the
+attack cycle is considered to be continuing. The fighting level is incremented
+and defense is activated again for the longer duration.
 
-If arming fails, the attack cycle ends and the fighting level is reset to 1.
+If the condition stops matching while arming, the attack cycle ends and the
+fighting level is reset to 1.
 
 For example, with:
 
@@ -90,10 +91,11 @@ metrics:
   interval: 1m
 
 policy:
-  armingChecks: 5
+  arming:
+    levels: 5
   fighting:
-    baseDuration: 10m
-    maxLevel: 12
+    levelDuration: 10m
+    levels: 12
 ```
 
 a continuing attack may progress like this:
@@ -117,7 +119,7 @@ attack while still periodically checking whether protection is still needed.
 When zeta-defender owns the active defense, re-evaluation temporarily removes it
 so the condition can observe unprotected load. During a continuing attack, this
 creates an intentional probe window of approximately
-`interval * armingChecks`.
+`interval * policy.arming.levels`.
 
 ## Cloudflare action
 
@@ -151,7 +153,7 @@ the setting is still `under_attack`. `startupMode` controls startup behavior:
 * `normal` immediately applies `normalSecurityLevel` and starts the controller
   in `normal`.
 * `fighting` immediately applies `under_attack` and starts the controller in
-  fighting level 1 for `baseDuration`.
+  fighting level 1 for `levelDuration`.
 
 Pre-existing Under Attack Mode remains unowned in `preserve` mode and is not
 disabled by zeta-defender. The same ownership rule applies when `fighting` is
@@ -222,23 +224,26 @@ The default listen address is `:8080`.
 
 `zeta_defender_level` is the single state metric:
 
-* `0` — normal
-* `1-99` — arming progress (`1 + successful checks`)
-* `100` — reserved
-* `100 + fightingLevel` — active fighting
+* `0` — normal (`0xx` state range)
+* `100 + arming level` — arming progress (`1xx` state range)
+* `200 + fightingLevel` — active fighting (`2xx` state range)
 
 For example:
 
 ```text
 0     normal
-1     arming, no successful additional check yet
-2     arming, 1 successful additional check
+100   arming level 0
+101   arming level 1
 ...
-101   fighting level 1
-102   fighting level 2
+104   arming level 4 (with policy.arming.levels: 5)
+201   fighting level 1
+202   fighting level 2
 ...
-112   fighting level 12
+212   fighting level 12
 ```
+
+Both `policy.arming.levels` and `policy.fighting.levels` must be between `1` and
+`99`, keeping their values within the `1xx` and `2xx` state ranges.
 
 `zeta_defender_fighting_seconds_total` is a monotonically increasing counter of
 the total time, in seconds, that the defender has spent in the `fighting` state.

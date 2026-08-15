@@ -21,9 +21,9 @@ const (
 )
 
 type Policy struct {
-	ArmingChecks int
-	BaseDuration time.Duration
-	MaxLevel     int
+	ArmingLevels          int
+	FightingLevelDuration time.Duration
+	FightingLevels        int
 }
 
 // Observer receives a one-way projection of controller activity. Implementations
@@ -83,7 +83,7 @@ type Controller struct {
 	observer Observer
 
 	state         State
-	armingChecks  int
+	armingLevel   int
 	fightingLevel int
 	foughtInCycle bool
 	fightingUntil time.Time
@@ -97,11 +97,11 @@ func newWithClock(provider metrics.Provider, act action.Action, policy Policy, i
 	if provider == nil || act == nil || clock == nil {
 		return nil, errors.New("metrics provider, action, and clock are required")
 	}
-	if interval <= 0 || policy.ArmingChecks <= 0 || policy.BaseDuration <= 0 || policy.MaxLevel < 1 {
-		return nil, errors.New("interval, arming checks, base duration, and max level must be positive")
+	if interval <= 0 || policy.ArmingLevels <= 0 || policy.FightingLevelDuration <= 0 || policy.FightingLevels < 1 {
+		return nil, errors.New("interval, arming levels, fighting level duration, and fighting levels must be positive")
 	}
-	if int64(policy.BaseDuration) > math.MaxInt64/int64(policy.MaxLevel) {
-		return nil, errors.New("base duration multiplied by max level overflows time.Duration")
+	if int64(policy.FightingLevelDuration) > math.MaxInt64/int64(policy.FightingLevels) {
+		return nil, errors.New("fighting level duration multiplied by fighting levels overflows time.Duration")
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -117,11 +117,11 @@ func newWithClock(provider metrics.Provider, act action.Action, policy Policy, i
 	return c, nil
 }
 
-func (c *Controller) State() State          { return c.state }
-func (c *Controller) ArmingCheckCount() int { return c.armingChecks }
-func (c *Controller) FightingLevel() int    { return c.fightingLevel }
+func (c *Controller) State() State       { return c.state }
+func (c *Controller) ArmingLevel() int   { return c.armingLevel }
+func (c *Controller) FightingLevel() int { return c.fightingLevel }
 func (c *Controller) FightingDuration() time.Duration {
-	return c.policy.BaseDuration * time.Duration(c.fightingLevel)
+	return c.policy.FightingLevelDuration * time.Duration(c.fightingLevel)
 }
 
 // Tick performs exactly one due operation. It never queries metrics while fighting.
@@ -134,15 +134,15 @@ func (c *Controller) Tick(ctx context.Context) error {
 			return fmt.Errorf("deactivate defense: %w", err)
 		}
 		c.transition(Arming)
-		c.armingChecks = 0
+		c.armingLevel = 0
 		c.observeLevel()
 		return nil
 	}
 
 	matched, err := c.provider.Evaluate(ctx)
 	if err != nil {
-		if c.state == Arming && c.armingChecks != 0 {
-			c.armingChecks = 0
+		if c.state == Arming && c.armingLevel != 0 {
+			c.armingLevel = 0
 			c.observeLevel()
 		}
 		return fmt.Errorf("evaluate metrics: %w", err)
@@ -154,21 +154,21 @@ func (c *Controller) applyEvaluation(ctx context.Context, matched bool) error {
 	switch c.state {
 	case Normal:
 		if matched {
-			c.armingChecks = 0
+			c.armingLevel = 0
 			c.transition(Arming)
 			c.observeLevel()
 		}
 	case Arming:
 		if !matched {
-			c.armingChecks = 0
+			c.armingLevel = 0
 			c.fightingLevel = 1
 			c.foughtInCycle = false
 			c.transition(Normal)
 			c.observeLevel()
 			return nil
 		}
-		c.armingChecks++
-		if c.armingChecks < c.policy.ArmingChecks {
+		if c.armingLevel+1 < c.policy.ArmingLevels {
+			c.armingLevel++
 			c.observeLevel()
 			return nil
 		}
@@ -176,7 +176,7 @@ func (c *Controller) applyEvaluation(ctx context.Context, matched bool) error {
 			c.observeLevel()
 			return fmt.Errorf("activate defense: %w", err)
 		}
-		if c.foughtInCycle && c.fightingLevel < c.policy.MaxLevel {
+		if c.foughtInCycle && c.fightingLevel < c.policy.FightingLevels {
 			c.fightingLevel++
 		}
 		c.foughtInCycle = true
@@ -188,7 +188,7 @@ func (c *Controller) applyEvaluation(ctx context.Context, matched bool) error {
 }
 
 func (c *Controller) observeLevel() {
-	c.observer.ObserveLevel(c.state, c.armingChecks, c.fightingLevel)
+	c.observer.ObserveLevel(c.state, c.armingLevel, c.fightingLevel)
 }
 
 func (c *Controller) transition(next State) {
