@@ -15,7 +15,10 @@ import (
 
 const requestTimeout = 15 * time.Second
 
-var version = "dev"
+var (
+	version           = "dev"
+	defaultConfigPath = "config.yaml"
+)
 
 type securityLevelService interface {
 	SecurityLevel(context.Context) (string, error)
@@ -40,13 +43,16 @@ func main() {
 func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	flags := flag.NewFlagSet("defendertool", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	configPath := flags.String("config", "config.yaml", "path to the YAML configuration file")
+	var configPath string
+	flags.StringVar(&configPath, "config", defaultConfigPath, "path to the YAML configuration file")
+	flags.StringVar(&configPath, "c", defaultConfigPath, "shorthand for --config")
 	flags.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: defendertool [-config path] status")
-		_, _ = fmt.Fprintln(stderr, "       defendertool version")
-		flags.PrintDefaults()
+		printUsage(stderr, defaultConfigPath)
 	}
 	if err := flags.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
 		return 2
 	}
 
@@ -70,7 +76,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 		return 0
 	}
 
-	cfg, err := deps.loadConfig(*configPath)
+	cfg, err := deps.loadConfig(configPath)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "load configuration: %v\n", err)
 		return 1
@@ -96,4 +102,16 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) int {
 	}
 	_, _ = fmt.Fprintln(stdout, level)
 	return 0
+}
+
+func printUsage(w io.Writer, configPath string) {
+	_, _ = fmt.Fprintf(w, `Usage: defendertool [options] status
+       defendertool version
+
+Options:
+  -c, --config string
+        path to the YAML configuration file (default %q)
+  -h, --help
+        display this help and exit
+`, configPath)
 }

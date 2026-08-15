@@ -36,3 +36,18 @@ func TestNewLogger(t *testing.T) {
 		t.Fatal("expected invalid format error")
 	}
 }
+
+func TestUsageGroupsConfigAliases(t *testing.T) {
+	var output bytes.Buffer
+	printUsage(&output, "config.yaml")
+	got := output.String()
+	if !strings.HasPrefix(got, "Usage: zeta-defender [options]\n") {
+		t.Fatalf("unexpected usage header:\n%s", got)
+	}
+	if !strings.Contains(got, "-c, --config string") {
+		t.Fatalf("config aliases are not grouped:\n%s", got)
+	}
+	if strings.Contains(got, "\n  -config") {
+		t.Fatalf("legacy config spelling is displayed:\n%s", got)
+	}
+}

@@ -22,12 +22,20 @@ import (
 
 const initializationTimeout = 15 * time.Second
 
-var version = "dev"
+var (
+	version           = "dev"
+	defaultConfigPath = "config.yaml"
+)
 
 func main() {
-	configPath := flag.String("config", "config.yaml", "path to the YAML configuration file")
+	var configPath string
+	flag.StringVar(&configPath, "config", defaultConfigPath, "path to the YAML configuration file")
+	flag.StringVar(&configPath, "c", defaultConfigPath, "shorthand for --config")
 	logFormat := flag.String("log-format", "text", "log format: text or json")
 	showVersion := flag.Bool("version", false, "display version and exit")
+	flag.Usage = func() {
+		printUsage(flag.CommandLine.Output(), defaultConfigPath)
+	}
 	flag.Parse()
 
 	if *showVersion {
@@ -43,7 +51,7 @@ func main() {
 	signalCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfg, err := config.Load(*configPath)
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		logger.Error("failed to load configuration", "error", err)
 		os.Exit(1)
@@ -96,7 +104,7 @@ func main() {
 	go func() { results <- runResult{"controller", controller.Run(ctx)} }()
 	go func() { results <- runResult{"http server", httpServer.Run(ctx)} }()
 
-	logger.Info("zeta-defender started", "version", version, "config", *configPath, "listen", cfg.Server.Listen)
+	logger.Info("zeta-defender started", "version", version, "config", configPath, "listen", cfg.Server.Listen)
 	first := <-results
 	cancel()
 	second := <-results
@@ -109,6 +117,21 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("zeta-defender stopped")
+}
+
+func printUsage(w io.Writer, configPath string) {
+	_, _ = fmt.Fprintf(w, `Usage: zeta-defender [options]
+
+Options:
+  -c, --config string
+        path to the YAML configuration file (default %q)
+      --log-format string
+        log format: text or json (default "text")
+      --version
+        display version and exit
+  -h, --help
+        display this help and exit
+`, configPath)
 }
 
 func newLogger(format string, output io.Writer) (*slog.Logger, error) {

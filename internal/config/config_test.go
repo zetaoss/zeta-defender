@@ -43,8 +43,8 @@ actions:
 	if cfg.Actions.Cloudflare.APIToken != "secret-value" {
 		t.Fatal("environment variable was not expanded")
 	}
-	if cfg.Actions.Cloudflare.NormalSecurityLevel != DefaultNormalSecurityLevel {
-		t.Fatalf("default normal security level=%q", cfg.Actions.Cloudflare.NormalSecurityLevel)
+	if cfg.Actions.Cloudflare.NormalSecurityLevel != "essentially_off" {
+		t.Fatalf("unexpected default normal security level=%q", cfg.Actions.Cloudflare.NormalSecurityLevel)
 	}
 	if cfg.Actions.Cloudflare.StartupMode != StartupModePreserve {
 		t.Fatalf("default startup mode=%q", cfg.Actions.Cloudflare.StartupMode)

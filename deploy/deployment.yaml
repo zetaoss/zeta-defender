@@ -21,10 +21,10 @@ spec:
       containers:
         - name: zeta-defender
           image: ghcr.io/zetaoss/zeta-defender:latest
+          command:
+            - /zeta-defender/bin/zeta-defender
           args:
-            - -config
-            - /etc/zeta-defender/config.yaml
-            - -log-format
+            - --log-format
             - json
           env:
             - name: CLOUDFLARE_API_TOKEN
@@ -64,7 +64,7 @@ spec:
             runAsNonRoot: true
           volumeMounts:
             - name: config
-              mountPath: /etc/zeta-defender
+              mountPath: /zeta-defender/etc
               readOnly: true
       volumes:
         - name: config
