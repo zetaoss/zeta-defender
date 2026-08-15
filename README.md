@@ -173,12 +173,20 @@ The API token is used only in the `Authorization` header and is never logged.
 ## Run
 
 ```sh
-go run ./cmd/zeta-defender -config config.yaml
+go run ./cmd/defender -config config.yaml
 ```
 
-Print the version with `-version`. Logs use the human-readable `text` format
-by default; select structured output with `-log-format json`. The Kubernetes
-deployment enables JSON logs.
+Print either binary's version with `defender -version` or
+`defendertool version`. Logs use the human-readable `text` format by default;
+select structured output with `-log-format json`. The Kubernetes deployment
+enables JSON logs.
+
+Query the zone's current Cloudflare security level with the read-only companion
+CLI. It uses the same configuration file as the daemon:
+
+```sh
+go run ./cmd/defendertool -config config.yaml status
+```
 
 `SIGINT` and `SIGTERM` stop metric polling and the HTTP server gracefully.
 Active Cloudflare protection is left unchanged on shutdown.
@@ -209,6 +217,14 @@ the API token Secret as described there, and apply it with:
 
 ```sh
 make -C deploy apply
+```
+
+The runtime image includes Alpine's `sh` for operational inspection. To query
+the current Cloudflare security level from the running Pod:
+
+```sh
+kubectl exec -it deploy/zeta-defender -- sh
+/defendertool -config /etc/zeta-defender/config.yaml status
 ```
 
 Pull requests and pushes to `main` run formatting, module, vet, race-test, and

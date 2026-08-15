@@ -122,6 +122,24 @@ func TestNewRejectsInvalidNormalSecurityLevel(t *testing.T) {
 	}
 }
 
+func TestSecurityLevel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method=%q", r.Method)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"success": true, "result": map[string]string{"value": "medium"},
+		})
+	}))
+	defer srv.Close()
+
+	a, _ := newWithBase("token", "zone", "medium", srv.URL, srv.Client())
+	got, err := a.SecurityLevel(context.Background())
+	if err != nil || got != "medium" {
+		t.Fatalf("level=%q err=%v", got, err)
+	}
+}
+
 func TestExistingUnderAttackModeIsNotOwnedOrDeactivated(t *testing.T) {
 	level := "under_attack"
 	patches := 0

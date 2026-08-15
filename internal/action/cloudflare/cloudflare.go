@@ -70,6 +70,13 @@ func isNormalSecurityLevel(level string) bool {
 	}
 }
 
+// SecurityLevel returns the zone's current Cloudflare security level.
+func (a *Action) SecurityLevel(ctx context.Context) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.getLevel(ctx)
+}
+
 func (a *Action) Initialize(ctx context.Context, mode StartupMode) error {
 	switch mode {
 	case StartupModePreserve:
