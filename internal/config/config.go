@@ -96,7 +96,7 @@ type CloudflareConfig struct {
 }
 
 const (
-	DefaultNormalSecurityLevel = "medium"
+	DefaultNormalSecurityLevel = "essentially_off"
 	StartupModePreserve        = "preserve"
 	StartupModeNormal          = "normal"
 	StartupModeFighting        = "fighting"

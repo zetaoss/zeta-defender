@@ -37,7 +37,7 @@ actions:
     apiToken: ${CLOUDFLARE_API_TOKEN}
     zoneID: example-zone-id
     # Security level applied when returning to normal operation.
-    normalSecurityLevel: medium
+    normalSecurityLevel: essentially_off
     # Startup mode: preserve, normal, or fighting.
     startupMode: preserve
 ```
@@ -135,8 +135,9 @@ setting. zeta-defender treats its operational meaning as two logical states:
 
 The API also exposes `off`, `essentially_off`, `low`, `medium`, and `high`.
 Any of these values can be selected as `normalSecurityLevel`; the default is
-`medium`. `under_attack` is reserved for the `fighting` state and is not a valid
-normal level.
+`essentially_off`, matching the value Cloudflare applies when Under Attack Mode
+is disabled in the current dashboard. `under_attack` is reserved for the
+`fighting` state and is not a valid normal level.
 
 > [!NOTE]
 > Under Attack Mode can disrupt clients that cannot process an interstitial
@@ -173,19 +174,19 @@ The API token is used only in the `Authorization` header and is never logged.
 ## Run
 
 ```sh
-go run ./cmd/defender -config config.yaml
+go run ./cmd/zeta-defender --config config.yaml
 ```
 
-Print either binary's version with `defender -version` or
+Print either binary's version with `defender --version` or
 `defendertool version`. Logs use the human-readable `text` format by default;
-select structured output with `-log-format json`. The Kubernetes deployment
+select structured output with `--log-format json`. The Kubernetes deployment
 enables JSON logs.
 
 Query the zone's current Cloudflare security level with the read-only companion
 CLI. It uses the same configuration file as the daemon:
 
 ```sh
-go run ./cmd/defendertool -config config.yaml status
+go run ./cmd/defendertool --config config.yaml status
 ```
 
 `SIGINT` and `SIGTERM` stop metric polling and the HTTP server gracefully.
@@ -207,7 +208,7 @@ docker build -t zeta-defender .
 docker run --rm \
   -p 8080:8080 \
   -e CLOUDFLARE_API_TOKEN \
-  -v "$PWD/config.yaml:/etc/zeta-defender/config.yaml:ro" \
+  -v "$PWD/config.yaml:/zeta-defender/etc/config.yaml:ro" \
   zeta-defender
 ```
 
@@ -219,12 +220,15 @@ the API token Secret as described there, and apply it with:
 make -C deploy apply
 ```
 
-The runtime image includes Alpine's `sh` for operational inspection. To query
-the current Cloudflare security level from the running Pod:
+Following Fluent Bit's application-owned layout, the image installs binaries
+in `/zeta-defender/bin` and uses `/zeta-defender/etc/config.yaml` as their
+default configuration path. The runtime image also includes Alpine's `sh` for
+operational inspection. To query the current Cloudflare security level from the
+running Pod:
 
 ```sh
 kubectl exec -it deploy/zeta-defender -- sh
-/defendertool -config /etc/zeta-defender/config.yaml status
+/zeta-defender/bin/defendertool status
 ```
 
 Pull requests and pushes to `main` run formatting, module, vet, race-test, and

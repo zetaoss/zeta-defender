@@ -18,6 +18,6 @@ actions:
     apiToken: ${CLOUDFLARE_API_TOKEN}
     zoneID: example-zone-id
     # Security level applied when returning to normal operation.
-    normalSecurityLevel: medium
+    normalSecurityLevel: essentially_off
     # Startup mode: preserve, normal, or fighting.
     startupMode: preserve
