@@ -7,10 +7,11 @@ metrics:
   expr: 'rate(node_cpu_usage_seconds_total[5m]) / on(node) kube_node_status_allocatable{node=~".*my-pool-1.*",resource="cpu",unit="core"} > bool 0.9'
 
 policy:
-  armingChecks: 5
+  arming:
+    levels: 5
   fighting:
-    baseDuration: 10m
-    maxLevel: 12
+    levelDuration: 10m
+    levels: 12
 
 actions:
   cloudflare:
