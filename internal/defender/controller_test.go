@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -83,7 +84,7 @@ func newTestController(t *testing.T, armingLevels, fightingLevels int, p *fakePr
 		ArmingLevels:          armingLevels,
 		FightingLevelDuration: 10 * time.Minute,
 		FightingLevels:        fightingLevels,
-	}, time.Minute, slog.New(slog.NewTextHandler(io.Discard, nil)), clock)
+	}, time.Minute, 6*time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)), clock)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +120,7 @@ func TestObserverReceivesRuntimeProjection(t *testing.T) {
 	p := &fakeProvider{results: []metricResult{{value: true}, {value: true}, {value: false}}}
 	a := &fakeAction{}
 	observer := &recordingObserver{}
-	c, err := newWithClock(p, a, Policy{ArmingLevels: 1, FightingLevelDuration: time.Minute, FightingLevels: 2}, time.Second, nil, clock, WithObserver(observer))
+	c, err := newWithClock(p, a, Policy{ArmingLevels: 1, FightingLevelDuration: time.Minute, FightingLevels: 2}, time.Second, 6*time.Hour, nil, clock, WithObserver(observer))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +210,7 @@ func TestInitialFightingStartsProtectedAndDeactivatesAfterLevelDuration(t *testi
 		ArmingLevels:          1,
 		FightingLevelDuration: 10 * time.Minute,
 		FightingLevels:        3,
-	}, time.Minute, nil, clock, WithInitialFighting())
+	}, time.Minute, 6*time.Hour, nil, clock, WithInitialFighting())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,5 +312,100 @@ func TestRunStopsTimerOnContextCancellation(t *testing.T) {
 	}
 	if a.deactivations != 0 {
 		t.Fatalf("startup deactivations=%d, want 0", a.deactivations)
+	}
+}
+
+type capturingHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *capturingHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h *capturingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r)
+	return nil
+}
+func (h *capturingHandler) WithAttrs(attrs []slog.Attr) slog.Handler { return h }
+func (h *capturingHandler) WithGroup(name string) slog.Handler       { return h }
+
+func (h *capturingHandler) countInfoMsg(msg string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	n := 0
+	for _, r := range h.records {
+		if r.Level == slog.LevelInfo && r.Message == msg {
+			n++
+		}
+	}
+	return n
+}
+
+// advancingClock fires timers immediately and advances its internal clock by
+// the requested duration on each NewTimer call, simulating elapsed time.
+type advancingClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *advancingClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *advancingClock) NewTimer(d time.Duration) Timer {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	c.mu.Unlock()
+	ch := make(chan time.Time, 1)
+	ch <- c.Now()
+	return &chanTimer{ch: ch}
+}
+
+type chanTimer struct{ ch chan time.Time }
+
+func (t *chanTimer) C() <-chan time.Time { return t.ch }
+func (t *chanTimer) Stop() bool         { return false }
+
+func TestRunEmitsPeriodicStatusLog(t *testing.T) {
+	statusInterval := time.Hour
+	start := time.Unix(0, 0)
+	clock := &advancingClock{now: start}
+
+	p := &fakeProvider{}
+	a := &fakeAction{}
+	h := &capturingHandler{}
+	logger := slog.New(h)
+
+	c, err := newWithClock(p, a, Policy{
+		ArmingLevels:          1,
+		FightingLevelDuration: time.Minute,
+		FightingLevels:        1,
+	}, time.Minute, statusInterval, logger, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx) }()
+
+	// Wait until at least one status log has been emitted.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if h.countInfoMsg("status") >= 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	if n := h.countInfoMsg("status"); n < 1 {
+		t.Fatalf("expected at least one status log, got %d", n)
 	}
 }

@@ -6,6 +6,9 @@ metrics:
   interval: 1m
   expr: 'rate(node_cpu_usage_seconds_total[5m]) / on(node) kube_node_status_allocatable{node=~".*my-pool-1.*",resource="cpu",unit="core"} > bool 0.9'
 
+# Interval between periodic status INFO logs (default: 6h).
+# statusInterval: 6h
+
 policy:
   arming:
     levels: 5

@@ -11,10 +11,12 @@ import (
 )
 
 type Config struct {
-	Server  ServerConfig  `yaml:"server"`
-	Metrics MetricsConfig `yaml:"metrics"`
-	Policy  PolicyConfig  `yaml:"policy"`
-	Actions ActionsConfig `yaml:"actions"`
+	Server               ServerConfig  `yaml:"server"`
+	Metrics              MetricsConfig `yaml:"metrics"`
+	Policy               PolicyConfig  `yaml:"policy"`
+	Actions              ActionsConfig `yaml:"actions"`
+	StatusInterval       time.Duration `yaml:"-"`
+	StatusIntervalString string        `yaml:"statusInterval"`
 }
 
 type ServerConfig struct {
@@ -103,6 +105,8 @@ const (
 	maxPolicyLevels            = 99
 )
 
+const DefaultStatusInterval = 6 * time.Hour
+
 func Load(path string) (Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -114,6 +118,15 @@ func Load(path string) (Config, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
+	}
+	if cfg.StatusIntervalString == "" {
+		cfg.StatusInterval = DefaultStatusInterval
+	} else {
+		d, err := time.ParseDuration(cfg.StatusIntervalString)
+		if err != nil {
+			return Config{}, fmt.Errorf("statusInterval: %w", err)
+		}
+		cfg.StatusInterval = d
 	}
 	if cfg.Actions.Cloudflare != nil {
 		if cfg.Actions.Cloudflare.NormalSecurityLevel == "" {
@@ -142,6 +155,9 @@ func (c Config) Validate() error {
 	}
 	if c.Metrics.Interval <= 0 {
 		errs = append(errs, errors.New("metrics.interval must be positive"))
+	}
+	if c.StatusInterval <= 0 {
+		errs = append(errs, errors.New("statusInterval must be positive"))
 	}
 	if c.Policy.Arming.Levels < 1 {
 		errs = append(errs, errors.New("policy.arming.levels must be at least 1"))
