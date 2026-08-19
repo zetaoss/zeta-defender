@@ -74,13 +74,14 @@ type realTimer struct{ *time.Timer }
 func (t realTimer) C() <-chan time.Time { return t.Timer.C }
 
 type Controller struct {
-	provider metrics.Provider
-	action   action.Action
-	policy   Policy
-	interval time.Duration
-	clock    Clock
-	logger   *slog.Logger
-	observer Observer
+	provider       metrics.Provider
+	action         action.Action
+	policy         Policy
+	interval       time.Duration
+	statusInterval time.Duration
+	clock          Clock
+	logger         *slog.Logger
+	observer       Observer
 
 	state         State
 	armingLevel   int
@@ -89,11 +90,13 @@ type Controller struct {
 	fightingUntil time.Time
 }
 
-func New(provider metrics.Provider, act action.Action, policy Policy, interval time.Duration, logger *slog.Logger, options ...Option) (*Controller, error) {
-	return newWithClock(provider, act, policy, interval, logger, realClock{}, options...)
+const DefaultStatusInterval = 6 * time.Hour
+
+func New(provider metrics.Provider, act action.Action, policy Policy, interval time.Duration, statusInterval time.Duration, logger *slog.Logger, options ...Option) (*Controller, error) {
+	return newWithClock(provider, act, policy, interval, statusInterval, logger, realClock{}, options...)
 }
 
-func newWithClock(provider metrics.Provider, act action.Action, policy Policy, interval time.Duration, logger *slog.Logger, clock Clock, options ...Option) (*Controller, error) {
+func newWithClock(provider metrics.Provider, act action.Action, policy Policy, interval time.Duration, statusInterval time.Duration, logger *slog.Logger, clock Clock, options ...Option) (*Controller, error) {
 	if provider == nil || act == nil || clock == nil {
 		return nil, errors.New("metrics provider, action, and clock are required")
 	}
@@ -103,12 +106,16 @@ func newWithClock(provider metrics.Provider, act action.Action, policy Policy, i
 	if int64(policy.FightingLevelDuration) > math.MaxInt64/int64(policy.FightingLevels) {
 		return nil, errors.New("fighting level duration multiplied by fighting levels overflows time.Duration")
 	}
+	if statusInterval <= 0 {
+		statusInterval = DefaultStatusInterval
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	c := &Controller{
 		provider: provider, action: act, policy: policy, interval: interval,
-		clock: clock, logger: logger, observer: noopObserver{}, state: Normal, fightingLevel: 1,
+		statusInterval: statusInterval,
+		clock:          clock, logger: logger, observer: noopObserver{}, state: Normal, fightingLevel: 1,
 	}
 	for _, option := range options {
 		option(c)
@@ -210,6 +217,7 @@ func (c *Controller) nextDelay() time.Duration {
 
 func (c *Controller) Run(ctx context.Context) error {
 	delay := time.Duration(0)
+	nextStatus := c.clock.Now().Add(c.statusInterval)
 	for {
 		timer := c.clock.NewTimer(delay)
 		select {
@@ -223,6 +231,10 @@ func (c *Controller) Run(ctx context.Context) error {
 				return nil
 			}
 			c.logger.Error("controller operation failed; will retry", "state", c.state, "error", err)
+		}
+		if now := c.clock.Now(); now.After(nextStatus) || now.Equal(nextStatus) {
+			c.logger.Info("status", "state", c.state, "fighting_level", c.fightingLevel)
+			nextStatus = now.Add(c.statusInterval)
 		}
 		delay = c.nextDelay()
 	}

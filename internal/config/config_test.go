@@ -52,6 +52,40 @@ actions:
 	if cfg.Server.Listen != ":8080" {
 		t.Fatalf("default server listen=%q", cfg.Server.Listen)
 	}
+	if cfg.StatusInterval != DefaultStatusInterval {
+		t.Fatalf("default status interval=%s, want %s", cfg.StatusInterval, DefaultStatusInterval)
+	}
+}
+
+func TestLoadParsesCustomStatusInterval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	data := []byte(`
+metrics:
+  endpoint: http://prometheus:9090
+  interval: 30s
+  expr: up
+policy:
+  arming:
+    levels: 2
+  fighting:
+    levelDuration: 5m
+    levels: 4
+statusInterval: 12h
+actions:
+  cloudflare:
+    apiToken: token
+    zoneID: zone
+`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StatusInterval != 12*time.Hour {
+		t.Fatalf("status interval=%s, want 12h", cfg.StatusInterval)
+	}
 }
 
 func TestValidateRejectsInvalidPolicy(t *testing.T) {
@@ -142,8 +176,9 @@ func TestLoadRejectsLegacyPolicyFields(t *testing.T) {
 
 func validConfig() Config {
 	return Config{
-		Server:  ServerConfig{Listen: ":8080"},
-		Metrics: MetricsConfig{Endpoint: "http://prometheus:9090", Expr: "up", Interval: time.Minute},
+		Server:         ServerConfig{Listen: ":8080"},
+		Metrics:        MetricsConfig{Endpoint: "http://prometheus:9090", Expr: "up", Interval: time.Minute},
+		StatusInterval: DefaultStatusInterval,
 		Policy: PolicyConfig{
 			Arming:   ArmingConfig{Levels: 1},
 			Fighting: FightingConfig{LevelDuration: time.Minute, Levels: 1},

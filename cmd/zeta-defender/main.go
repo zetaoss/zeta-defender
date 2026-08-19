@@ -86,7 +86,7 @@ func main() {
 		ArmingLevels:          cfg.Policy.Arming.Levels,
 		FightingLevelDuration: cfg.Policy.Fighting.LevelDuration,
 		FightingLevels:        cfg.Policy.Fighting.Levels,
-	}, cfg.Metrics.Interval, logger, controllerOptions...)
+	}, cfg.Metrics.Interval, cfg.StatusInterval, logger, controllerOptions...)
 	if err != nil {
 		logger.Error("failed to create controller", "error", err)
 		os.Exit(1)
