@@ -115,7 +115,7 @@ func newWithClock(provider metrics.Provider, act action.Action, policy Policy, i
 	c := &Controller{
 		provider: provider, action: act, policy: policy, interval: interval,
 		statusInterval: statusInterval,
-		clock: clock, logger: logger, observer: noopObserver{}, state: Normal, fightingLevel: 1,
+		clock:          clock, logger: logger, observer: noopObserver{}, state: Normal, fightingLevel: 1,
 	}
 	for _, option := range options {
 		option(c)

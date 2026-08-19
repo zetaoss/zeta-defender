@@ -367,7 +367,7 @@ func (c *advancingClock) NewTimer(d time.Duration) Timer {
 type chanTimer struct{ ch chan time.Time }
 
 func (t *chanTimer) C() <-chan time.Time { return t.ch }
-func (t *chanTimer) Stop() bool         { return false }
+func (t *chanTimer) Stop() bool          { return false }
 
 func TestRunEmitsPeriodicStatusLog(t *testing.T) {
 	statusInterval := time.Hour
