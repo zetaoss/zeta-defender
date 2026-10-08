@@ -148,10 +148,9 @@ func (c *Controller) Tick(ctx context.Context) error {
 
 	matched, err := c.provider.Evaluate(ctx)
 	if err != nil {
-		if c.state == Arming && c.armingLevel != 0 {
-			c.armingLevel = 0
-			c.observeLevel()
-		}
+		// Hold arming progress: a failed query says nothing about the load,
+		// and a metrics backend on a saturated node can fail exactly during
+		// an attack.
 		return fmt.Errorf("evaluate metrics: %w", err)
 	}
 	return c.applyEvaluation(ctx, matched)

@@ -51,7 +51,9 @@ The Prometheus result may be a scalar or instant vector.
 * For a vector, any true sample makes the result true.
 * An empty vector means false.
 
-Evaluation errors reset arming progress.
+Evaluation errors neither advance nor reset arming progress. A failed query says
+nothing about the load, and a metrics backend on a saturated node can fail
+exactly during an attack, so such failures do not delay defense.
 
 Prefer PromQL `bool` comparisons so the result is explicitly `0` or `1`.
 
