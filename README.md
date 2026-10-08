@@ -285,6 +285,18 @@ For example:
 `99`, and `policy.rearming.levels`, when set, between `1` and `99`, keeping their
 values within the `1xx` and `2xx` state ranges.
 
+On a graph, one level is small next to the 100-wide gaps between states. To make
+level changes visible while keeping `0`, `100`, and `200` as the state
+baselines, stretch the level within its range when plotting:
+
+```promql
+floor(zeta_defender_level / 100) * 100 + (zeta_defender_level % 100) * 8
+```
+
+Pick the multiplier so that the largest level times it stays below `100`
+(`8` fits up to 12 levels). Alerts and other queries should keep using the raw
+metric.
+
 `zeta_defender_fighting_seconds_total` is a monotonically increasing counter of
 the total time, in seconds, that the defender has spent in the `fighting` state.
 It can be used to calculate fighting time over longer periods, for example:
