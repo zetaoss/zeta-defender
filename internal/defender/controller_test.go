@@ -251,9 +251,60 @@ func TestRepeatedFightingIncreasesAndCapsLevel(t *testing.T) {
 	}
 }
 
-func TestMetricsErrorsResetArmingProgress(t *testing.T) {
+func TestRearmingLevelsApplyAfterFightingInSameCycle(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(100, 0)}
+	matches := func(n int) []metricResult {
+		r := make([]metricResult, n)
+		for i := range r {
+			r[i].value = true
+		}
+		return r
+	}
+	var results []metricResult
+	results = append(results, matches(4)...)  // arming levels 0-2, then fight 1
+	results = append(results, matches(1)...)  // rearming has one level: fight 2
+	results = append(results, metricResult{}) // no match: cycle ends
+	results = append(results, matches(4)...)  // a new cycle uses full arming
+	p := &fakeProvider{results: results}
+	a := &fakeAction{}
+	c, err := newWithClock(p, a, Policy{ArmingLevels: 3, RearmingLevels: 1, FightingLevelDuration: 10 * time.Minute, FightingLevels: 3},
+		time.Minute, 6*time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)), clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticks := func(n int) {
+		for i := 0; i < n; i++ {
+			_ = tick(t, c)
+		}
+	}
+
+	ticks(4)
+	if c.State() != Fighting || c.FightingLevel() != 1 {
+		t.Fatalf("first fight: state=%s level=%d", c.State(), c.FightingLevel())
+	}
+	clock.now = clock.now.Add(10 * time.Minute)
+	ticks(2) // fighting -> arming, then one match
+	if c.State() != Fighting || c.FightingLevel() != 2 || a.activations != 2 {
+		t.Fatalf("rearming should fight after one match: state=%s level=%d activations=%d", c.State(), c.FightingLevel(), a.activations)
+	}
+	clock.now = clock.now.Add(20 * time.Minute)
+	ticks(2) // fighting -> arming, then no match
+	if c.State() != Normal || c.FightingLevel() != 1 {
+		t.Fatalf("cycle end: state=%s level=%d", c.State(), c.FightingLevel())
+	}
+	ticks(3)
+	if c.State() != Arming || c.ArmingLevel() != 2 {
+		t.Fatalf("new cycle must use full arming: state=%s arming_level=%d", c.State(), c.ArmingLevel())
+	}
+	ticks(1)
+	if c.State() != Fighting || c.FightingLevel() != 1 {
+		t.Fatalf("new cycle fight: state=%s level=%d", c.State(), c.FightingLevel())
+	}
+}
+
+func TestMetricsErrorsHoldArmingProgress(t *testing.T) {
 	metricErr := errors.New("unavailable")
-	p := &fakeProvider{results: []metricResult{{value: true}, {value: true}, {err: metricErr}, {value: true}, {value: true}}}
+	p := &fakeProvider{results: []metricResult{{value: true}, {value: true}, {err: metricErr}, {value: true}}}
 	a := &fakeAction{}
 	c := newTestController(t, 2, 3, p, a, &fakeClock{})
 	_ = tick(t, c)
@@ -261,14 +312,11 @@ func TestMetricsErrorsResetArmingProgress(t *testing.T) {
 	if err := tick(t, c); !errors.Is(err, metricErr) {
 		t.Fatalf("expected wrapped metrics error, got %v", err)
 	}
-	if c.State() != Arming || c.ArmingLevel() != 0 || a.activations != 0 {
-		t.Fatalf("metrics error did not reset progress: state=%s arming_level=%d", c.State(), c.ArmingLevel())
+	if c.State() != Arming || c.ArmingLevel() != 1 || a.activations != 0 {
+		t.Fatalf("metrics error changed progress: state=%s arming_level=%d", c.State(), c.ArmingLevel())
 	}
-	if err := tick(t, c); err != nil || c.State() != Arming || c.ArmingLevel() != 1 {
-		t.Fatalf("first match after error: state=%s arming_level=%d err=%v", c.State(), c.ArmingLevel(), err)
-	}
-	if err := tick(t, c); err != nil || c.State() != Fighting {
-		t.Fatalf("second match after error should complete arming: state=%s err=%v", c.State(), err)
+	if err := tick(t, c); err != nil || c.State() != Fighting || a.activations != 1 {
+		t.Fatalf("match after error should complete arming: state=%s err=%v", c.State(), err)
 	}
 }
 

@@ -28,6 +28,10 @@ metrics:
 policy:
   arming:
     levels: 5
+  # Optional: arming levels after a fighting period in the same attack cycle
+  # (default: arming.levels).
+  rearming:
+    levels: 2
   fighting:
     levelDuration: 10m
     levels: 12
@@ -38,7 +42,7 @@ actions:
     zoneID: example-zone-id
     # Security level applied when returning to normal operation.
     normalSecurityLevel: essentially_off
-    # Startup mode: preserve, normal, or fighting.
+    # Startup mode: preserve, normal, fighting, or adopt.
     startupMode: preserve
 ```
 
@@ -51,7 +55,9 @@ The Prometheus result may be a scalar or instant vector.
 * For a vector, any true sample makes the result true.
 * An empty vector means false.
 
-Evaluation errors reset arming progress.
+Evaluation errors neither advance nor reset arming progress. A failed query says
+nothing about the load, and a metrics backend on a saturated node can fail
+exactly during an attack, so such failures do not delay defense.
 
 Prefer PromQL `bool` comparisons so the result is explicitly `0` or `1`.
 
@@ -76,6 +82,12 @@ evaluation resumes, then returns to `arming`. If zeta-defender enabled UAM and
 the setting is still `under_attack`, `normalSecurityLevel` is applied and the
 next evaluations observe the unprotected load again. Out-of-band changes are left
 unchanged.
+
+After a fighting period, the next arming uses `policy.rearming.levels` instead of
+`policy.arming.levels` when it is set. A long first arming filters out short
+spikes (rollouts, backups), while a short rearming keeps the unprotected probe
+window small once an attack is known. A new attack cycle uses the full
+`policy.arming.levels` again.
 
 If evaluations continue to match the condition through every arming level, the
 attack cycle is considered to be continuing. The fighting level is incremented
@@ -119,7 +131,8 @@ attack while still periodically checking whether protection is still needed.
 When zeta-defender owns the active defense, re-evaluation temporarily removes it
 so the condition can observe unprotected load. During a continuing attack, this
 creates an intentional probe window of approximately
-`interval * policy.arming.levels`.
+`interval * policy.rearming.levels` (or `policy.arming.levels` when rearming is
+not set).
 
 ## Cloudflare action
 
@@ -155,12 +168,18 @@ the setting is still `under_attack`. `startupMode` controls startup behavior:
   in `normal`.
 * `fighting` immediately applies `under_attack` and starts the controller in
   fighting level 1 for `levelDuration`.
+* `adopt` takes ownership of an existing `under_attack` setting and starts the
+  controller in fighting level 1 for `levelDuration`, after which it is released
+  as usual. Otherwise it behaves like `preserve`. Use it when restarts are
+  expected (rollouts, node upgrades) and Under Attack Mode is not enabled by
+  hand, so a restart during `fighting` does not leave protection on.
 
 Pre-existing Under Attack Mode remains unowned in `preserve` mode and is not
 disabled by zeta-defender. The same ownership rule applies when `fighting` is
 selected but UAM was already active: the controller starts fighting, but UAM is
 left active when that period ends. If the process exits or crashes while
-protection is active, the protection is also left unchanged.
+protection is active, the protection is also left unchanged, unless the next
+instance starts with `adopt`.
 
 zeta-defender applies security levels on startup and state transitions; it does
 not continuously overwrite out-of-band changes made while the controller stays
@@ -262,8 +281,21 @@ For example:
 212   fighting level 12
 ```
 
-Both `policy.arming.levels` and `policy.fighting.levels` must be between `1` and
-`99`, keeping their values within the `1xx` and `2xx` state ranges.
+`policy.arming.levels` and `policy.fighting.levels` must be between `1` and
+`99`, and `policy.rearming.levels`, when set, between `1` and `99`, keeping their
+values within the `1xx` and `2xx` state ranges.
+
+On a graph, one level is small next to the 100-wide gaps between states. To make
+level changes visible while keeping `0`, `100`, and `200` as the state
+baselines, stretch the level within its range when plotting:
+
+```promql
+floor(zeta_defender_level / 100) * 100 + (zeta_defender_level % 100) * 8
+```
+
+Pick the multiplier so that the largest level times it stays below `100`
+(`8` fits up to 12 levels). Alerts and other queries should keep using the raw
+metric.
 
 `zeta_defender_fighting_seconds_total` is a monotonically increasing counter of
 the total time, in seconds, that the defender has spent in the `fighting` state.

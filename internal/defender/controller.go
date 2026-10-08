@@ -21,7 +21,10 @@ const (
 )
 
 type Policy struct {
-	ArmingLevels          int
+	ArmingLevels int
+	// RearmingLevels replaces ArmingLevels after a fighting period in the same
+	// attack cycle. Zero means ArmingLevels.
+	RearmingLevels        int
 	FightingLevelDuration time.Duration
 	FightingLevels        int
 }
@@ -103,6 +106,9 @@ func newWithClock(provider metrics.Provider, act action.Action, policy Policy, i
 	if interval <= 0 || policy.ArmingLevels <= 0 || policy.FightingLevelDuration <= 0 || policy.FightingLevels < 1 {
 		return nil, errors.New("interval, arming levels, fighting level duration, and fighting levels must be positive")
 	}
+	if policy.RearmingLevels < 0 {
+		return nil, errors.New("rearming levels must not be negative")
+	}
 	if int64(policy.FightingLevelDuration) > math.MaxInt64/int64(policy.FightingLevels) {
 		return nil, errors.New("fighting level duration multiplied by fighting levels overflows time.Duration")
 	}
@@ -148,10 +154,9 @@ func (c *Controller) Tick(ctx context.Context) error {
 
 	matched, err := c.provider.Evaluate(ctx)
 	if err != nil {
-		if c.state == Arming && c.armingLevel != 0 {
-			c.armingLevel = 0
-			c.observeLevel()
-		}
+		// Hold arming progress: a failed query says nothing about the load,
+		// and a metrics backend on a saturated node can fail exactly during
+		// an attack.
 		return fmt.Errorf("evaluate metrics: %w", err)
 	}
 	return c.applyEvaluation(ctx, matched)
@@ -174,7 +179,7 @@ func (c *Controller) applyEvaluation(ctx context.Context, matched bool) error {
 			c.observeLevel()
 			return nil
 		}
-		if c.armingLevel+1 < c.policy.ArmingLevels {
+		if c.armingLevel+1 < c.armingLevels() {
 			c.armingLevel++
 			c.observeLevel()
 			return nil
@@ -192,6 +197,16 @@ func (c *Controller) applyEvaluation(ctx context.Context, matched bool) error {
 		c.observeLevel()
 	}
 	return nil
+}
+
+// armingLevels is the number of arming levels to pass before fighting. After a
+// fighting period in the same attack cycle, the shorter rearming policy
+// applies so a continuing attack is not left unprotected for long.
+func (c *Controller) armingLevels() int {
+	if c.foughtInCycle && c.policy.RearmingLevels > 0 {
+		return c.policy.RearmingLevels
+	}
+	return c.policy.ArmingLevels
 }
 
 func (c *Controller) observeLevel() {

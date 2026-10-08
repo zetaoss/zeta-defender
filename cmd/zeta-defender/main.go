@@ -70,20 +70,21 @@ func main() {
 		os.Exit(1)
 	}
 	initializationCtx, cancelInitialization := context.WithTimeout(signalCtx, initializationTimeout)
-	err = act.Initialize(initializationCtx, cloudflareaction.StartupMode(cf.StartupMode))
+	startFighting, err := act.Initialize(initializationCtx, cloudflareaction.StartupMode(cf.StartupMode))
 	cancelInitialization()
 	if err != nil {
 		logger.Error("failed to apply startup mode", "mode", cf.StartupMode, "error", err)
 		os.Exit(1)
 	}
-	logger.Info("startup mode applied", "mode", cf.StartupMode)
+	logger.Info("startup mode applied", "mode", cf.StartupMode, "fighting", startFighting)
 	exporter := telemetry.New()
 	controllerOptions := []defender.Option{defender.WithObserver(exporter)}
-	if cf.StartupMode == config.StartupModeFighting {
+	if startFighting {
 		controllerOptions = append(controllerOptions, defender.WithInitialFighting())
 	}
 	controller, err := defender.New(provider, act, defender.Policy{
 		ArmingLevels:          cfg.Policy.Arming.Levels,
+		RearmingLevels:        cfg.Policy.Rearming.Levels,
 		FightingLevelDuration: cfg.Policy.Fighting.LevelDuration,
 		FightingLevels:        cfg.Policy.Fighting.Levels,
 	}, cfg.Metrics.Interval, cfg.StatusInterval, logger, controllerOptions...)

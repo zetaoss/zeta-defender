@@ -12,6 +12,10 @@ metrics:
 policy:
   arming:
     levels: 5
+  # Arming levels after a fighting period in the same attack cycle
+  # (default: arming.levels).
+  # rearming:
+  #   levels: 2
   fighting:
     levelDuration: 10m
     levels: 12
@@ -22,5 +26,5 @@ actions:
     zoneID: example-zone-id
     # Security level applied when returning to normal operation.
     normalSecurityLevel: essentially_off
-    # Startup mode: preserve, normal, or fighting.
+    # Startup mode: preserve, normal, fighting, or adopt.
     startupMode: preserve

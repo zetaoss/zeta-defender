@@ -48,6 +48,7 @@ func (c *MetricsConfig) UnmarshalYAML(node *yaml.Node) error {
 
 type PolicyConfig struct {
 	Arming   ArmingConfig   `yaml:"arming"`
+	Rearming ArmingConfig   `yaml:"rearming"`
 	Fighting FightingConfig `yaml:"fighting"`
 }
 
@@ -102,6 +103,7 @@ const (
 	StartupModePreserve        = "preserve"
 	StartupModeNormal          = "normal"
 	StartupModeFighting        = "fighting"
+	StartupModeAdopt           = "adopt"
 	maxPolicyLevels            = 99
 )
 
@@ -164,6 +166,11 @@ func (c Config) Validate() error {
 	} else if c.Policy.Arming.Levels > maxPolicyLevels {
 		errs = append(errs, fmt.Errorf("policy.arming.levels must be at most %d", maxPolicyLevels))
 	}
+	if c.Policy.Rearming.Levels < 0 {
+		errs = append(errs, errors.New("policy.rearming.levels must not be negative"))
+	} else if c.Policy.Rearming.Levels > maxPolicyLevels {
+		errs = append(errs, fmt.Errorf("policy.rearming.levels must be at most %d", maxPolicyLevels))
+	}
 	if c.Policy.Fighting.LevelDuration <= 0 {
 		errs = append(errs, errors.New("policy.fighting.levelDuration must be positive"))
 	}
@@ -187,9 +194,9 @@ func (c Config) Validate() error {
 			errs = append(errs, errors.New("actions.cloudflare.normalSecurityLevel must be off, essentially_off, low, medium, or high"))
 		}
 		switch c.Actions.Cloudflare.StartupMode {
-		case StartupModePreserve, StartupModeNormal, StartupModeFighting:
+		case StartupModePreserve, StartupModeNormal, StartupModeFighting, StartupModeAdopt:
 		default:
-			errs = append(errs, errors.New("actions.cloudflare.startupMode must be preserve, normal, or fighting"))
+			errs = append(errs, errors.New("actions.cloudflare.startupMode must be preserve, normal, fighting, or adopt"))
 		}
 	}
 	return errors.Join(errs...)
