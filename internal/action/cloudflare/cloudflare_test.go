@@ -59,13 +59,16 @@ func TestInitializeStartupMode(t *testing.T) {
 		wantRequests int
 		wantPatches  int
 		wantOwned    bool
+		wantFighting bool
 	}{
 		{name: "preserve", initialLevel: "under_attack", mode: StartupModePreserve, wantLevel: "under_attack"},
 		{name: "normal from fighting", initialLevel: "under_attack", mode: StartupModeNormal, wantLevel: "medium", wantRequests: 2, wantPatches: 1},
 		{name: "normal from another level", initialLevel: "high", mode: StartupModeNormal, wantLevel: "medium", wantRequests: 2, wantPatches: 1},
 		{name: "already normal", initialLevel: "medium", mode: StartupModeNormal, wantLevel: "medium", wantRequests: 1},
-		{name: "fighting", initialLevel: "high", mode: StartupModeFighting, wantLevel: "under_attack", wantRequests: 2, wantPatches: 1, wantOwned: true},
-		{name: "already fighting", initialLevel: "under_attack", mode: StartupModeFighting, wantLevel: "under_attack", wantRequests: 1},
+		{name: "fighting", initialLevel: "high", mode: StartupModeFighting, wantLevel: "under_attack", wantRequests: 2, wantPatches: 1, wantOwned: true, wantFighting: true},
+		{name: "already fighting", initialLevel: "under_attack", mode: StartupModeFighting, wantLevel: "under_attack", wantRequests: 1, wantFighting: true},
+		{name: "adopt existing under attack", initialLevel: "under_attack", mode: StartupModeAdopt, wantLevel: "under_attack", wantRequests: 1, wantOwned: true, wantFighting: true},
+		{name: "adopt with nothing to adopt", initialLevel: "medium", mode: StartupModeAdopt, wantLevel: "medium", wantRequests: 1},
 	}
 
 	for _, tt := range tests {
@@ -96,11 +99,12 @@ func TestInitializeStartupMode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := a.Initialize(context.Background(), tt.mode); err != nil {
+			fighting, err := a.Initialize(context.Background(), tt.mode)
+			if err != nil {
 				t.Fatal(err)
 			}
-			if level != tt.wantLevel || requests != tt.wantRequests || patches != tt.wantPatches || a.owned != tt.wantOwned {
-				t.Fatalf("level=%q requests=%d patches=%d owned=%t", level, requests, patches, a.owned)
+			if level != tt.wantLevel || requests != tt.wantRequests || patches != tt.wantPatches || a.owned != tt.wantOwned || fighting != tt.wantFighting {
+				t.Fatalf("level=%q requests=%d patches=%d owned=%t fighting=%t", level, requests, patches, a.owned, fighting)
 			}
 		})
 	}
@@ -111,7 +115,7 @@ func TestInitializeRejectsInvalidStartupMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := a.Initialize(context.Background(), StartupMode("invalid")); err == nil {
+	if _, err := a.Initialize(context.Background(), StartupMode("invalid")); err == nil {
 		t.Fatal("expected error")
 	}
 }

@@ -103,6 +103,7 @@ const (
 	StartupModePreserve        = "preserve"
 	StartupModeNormal          = "normal"
 	StartupModeFighting        = "fighting"
+	StartupModeAdopt           = "adopt"
 	maxPolicyLevels            = 99
 )
 
@@ -193,9 +194,9 @@ func (c Config) Validate() error {
 			errs = append(errs, errors.New("actions.cloudflare.normalSecurityLevel must be off, essentially_off, low, medium, or high"))
 		}
 		switch c.Actions.Cloudflare.StartupMode {
-		case StartupModePreserve, StartupModeNormal, StartupModeFighting:
+		case StartupModePreserve, StartupModeNormal, StartupModeFighting, StartupModeAdopt:
 		default:
-			errs = append(errs, errors.New("actions.cloudflare.startupMode must be preserve, normal, or fighting"))
+			errs = append(errs, errors.New("actions.cloudflare.startupMode must be preserve, normal, fighting, or adopt"))
 		}
 	}
 	return errors.Join(errs...)

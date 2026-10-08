@@ -42,7 +42,7 @@ actions:
     zoneID: example-zone-id
     # Security level applied when returning to normal operation.
     normalSecurityLevel: essentially_off
-    # Startup mode: preserve, normal, or fighting.
+    # Startup mode: preserve, normal, fighting, or adopt.
     startupMode: preserve
 ```
 
@@ -168,12 +168,18 @@ the setting is still `under_attack`. `startupMode` controls startup behavior:
   in `normal`.
 * `fighting` immediately applies `under_attack` and starts the controller in
   fighting level 1 for `levelDuration`.
+* `adopt` takes ownership of an existing `under_attack` setting and starts the
+  controller in fighting level 1 for `levelDuration`, after which it is released
+  as usual. Otherwise it behaves like `preserve`. Use it when restarts are
+  expected (rollouts, node upgrades) and Under Attack Mode is not enabled by
+  hand, so a restart during `fighting` does not leave protection on.
 
 Pre-existing Under Attack Mode remains unowned in `preserve` mode and is not
 disabled by zeta-defender. The same ownership rule applies when `fighting` is
 selected but UAM was already active: the controller starts fighting, but UAM is
 left active when that period ends. If the process exits or crashes while
-protection is active, the protection is also left unchanged.
+protection is active, the protection is also left unchanged, unless the next
+instance starts with `adopt`.
 
 zeta-defender applies security levels on startup and state transitions; it does
 not continuously overwrite out-of-band changes made while the controller stays

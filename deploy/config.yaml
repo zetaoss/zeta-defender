@@ -19,5 +19,5 @@ actions:
     zoneID: example-zone-id
     # Security level applied when returning to normal operation.
     normalSecurityLevel: essentially_off
-    # Startup mode: preserve, normal, or fighting.
+    # Startup mode: preserve, normal, fighting, or adopt.
     startupMode: preserve

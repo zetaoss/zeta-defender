@@ -25,6 +25,7 @@ const (
 	StartupModePreserve StartupMode = "preserve"
 	StartupModeNormal   StartupMode = "normal"
 	StartupModeFighting StartupMode = "fighting"
+	StartupModeAdopt    StartupMode = "adopt"
 )
 
 type Action struct {
@@ -77,17 +78,39 @@ func (a *Action) SecurityLevel(ctx context.Context) (string, error) {
 	return a.getLevel(ctx)
 }
 
-func (a *Action) Initialize(ctx context.Context, mode StartupMode) error {
+// Initialize applies the startup mode and reports whether the controller
+// should start in fighting.
+func (a *Action) Initialize(ctx context.Context, mode StartupMode) (bool, error) {
 	switch mode {
 	case StartupModePreserve:
-		return nil
+		return false, nil
 	case StartupModeNormal:
-		return a.setNormal(ctx)
+		return false, a.setNormal(ctx)
 	case StartupModeFighting:
-		return a.Activate(ctx)
+		return true, a.Activate(ctx)
+	case StartupModeAdopt:
+		return a.adopt(ctx)
 	default:
-		return fmt.Errorf("invalid startup mode %q", mode)
+		return false, fmt.Errorf("invalid startup mode %q", mode)
 	}
+}
+
+// adopt takes ownership of an existing Under Attack Mode, assuming a previous
+// instance enabled it before restarting, so it is released after one
+// fighting period instead of being left on.
+func (a *Action) adopt(ctx context.Context) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	current, err := a.getLevel(ctx)
+	if err != nil {
+		return false, err
+	}
+	if current != underAttackLevel {
+		return false, nil
+	}
+	a.owned = true
+	return true, nil
 }
 
 func (a *Action) setNormal(ctx context.Context) error {
