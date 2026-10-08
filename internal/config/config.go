@@ -48,6 +48,7 @@ func (c *MetricsConfig) UnmarshalYAML(node *yaml.Node) error {
 
 type PolicyConfig struct {
 	Arming   ArmingConfig   `yaml:"arming"`
+	Rearming ArmingConfig   `yaml:"rearming"`
 	Fighting FightingConfig `yaml:"fighting"`
 }
 
@@ -163,6 +164,11 @@ func (c Config) Validate() error {
 		errs = append(errs, errors.New("policy.arming.levels must be at least 1"))
 	} else if c.Policy.Arming.Levels > maxPolicyLevels {
 		errs = append(errs, fmt.Errorf("policy.arming.levels must be at most %d", maxPolicyLevels))
+	}
+	if c.Policy.Rearming.Levels < 0 {
+		errs = append(errs, errors.New("policy.rearming.levels must not be negative"))
+	} else if c.Policy.Rearming.Levels > maxPolicyLevels {
+		errs = append(errs, fmt.Errorf("policy.rearming.levels must be at most %d", maxPolicyLevels))
 	}
 	if c.Policy.Fighting.LevelDuration <= 0 {
 		errs = append(errs, errors.New("policy.fighting.levelDuration must be positive"))

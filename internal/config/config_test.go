@@ -102,6 +102,7 @@ func TestValidateRejectsLevelsAboveMetricRange(t *testing.T) {
 		want string
 	}{
 		{"arming", func(c *Config) { c.Policy.Arming.Levels = maxPolicyLevels + 1 }, "arming.levels must be at most 99"},
+		{"rearming", func(c *Config) { c.Policy.Rearming.Levels = maxPolicyLevels + 1 }, "rearming.levels must be at most 99"},
 		{"fighting", func(c *Config) { c.Policy.Fighting.Levels = maxPolicyLevels + 1 }, "fighting.levels must be at most 99"},
 	}
 	for _, tt := range tests {

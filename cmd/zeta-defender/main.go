@@ -84,6 +84,7 @@ func main() {
 	}
 	controller, err := defender.New(provider, act, defender.Policy{
 		ArmingLevels:          cfg.Policy.Arming.Levels,
+		RearmingLevels:        cfg.Policy.Rearming.Levels,
 		FightingLevelDuration: cfg.Policy.Fighting.LevelDuration,
 		FightingLevels:        cfg.Policy.Fighting.Levels,
 	}, cfg.Metrics.Interval, cfg.StatusInterval, logger, controllerOptions...)
